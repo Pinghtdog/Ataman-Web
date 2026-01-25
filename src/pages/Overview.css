@@ -1,0 +1,173 @@
+/* src/pages/Overview.css */
+
+/* TOP STATUS BAR */
+.status-bar {
+  margin-bottom: 24px;
+}
+.status-pill {
+  background-color: #388E3C; /* Green */
+  color: white;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+/* KPI CARDS ROW */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.kpi-card {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  border-left: 6px solid #ccc; /* Default border color */
+}
+
+.kpi-card h3 {
+  margin: 0 0 8px 0;
+  font-size: 0.9rem;
+  color: #6B7280;
+  font-weight: 500;
+}
+
+.kpi-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 8px;
+}
+
+.kpi-status {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Card Specific Colors */
+.kpi-card.critical { border-left-color: #D32F2F; }
+.kpi-card.critical .kpi-status { color: #D32F2F; }
+
+.kpi-card.stable { border-left-color: #388E3C; }
+.kpi-card.stable .kpi-status { color: #388E3C; }
+
+.kpi-card.warning { border-left-color: #FBC02D; }
+.kpi-card.warning .kpi-status { color: #F57F17; }
+
+/* MAIN CONTENT GRID (Split 2/3 and 1/3) */
+.content-split {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+}
+
+/* SECTION CONTAINERS */
+.section-container {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1F2937;
+  margin: 0;
+}
+
+/* BED TRACKER GRID */
+.legend {
+  display: flex;
+  gap: 16px;
+  font-size: 0.8rem;
+  color: #6B7280;
+}
+
+.legend span { display: flex; align-items: center; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 2px; }
+
+.bed-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr); /* 6 columns like the image */
+  gap: 12px;
+}
+
+.bed-box {
+  background-color: #004D40; /* Default Dark Teal */
+  color: white;
+  aspect-ratio: 1; /* Makes it a square */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.bed-box:hover { transform: scale(1.05); }
+
+.bed-box.occupied { background-color: #B71C1C; } /* Red */
+.bed-box.pending { background-color: #F9A825; color: black; } /* Yellow */
+
+/* REFERRALS LIST */
+.referral-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.referral-card {
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  padding: 16px;
+  background: #F9FAFB;
+}
+
+.patient-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.referral-info {
+  font-size: 0.8rem;
+  color: #6B7280;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.reason-tag {
+  color: #D32F2F;
+  font-size: 0.75rem;
+  background: #FEE2E2;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.accept-btn {
+  float: right;
+  background-color: #374151;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.accept-btn:hover { background-color: #111827; }
