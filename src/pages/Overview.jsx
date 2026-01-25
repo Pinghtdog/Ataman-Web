@@ -8,14 +8,14 @@ const Overview = () => {
   const [selectedBed, setSelectedBed] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // --- NEW: KPI STATE ---
+// Stats State
   const [stats, setStats] = useState({
     erOccupancy: 0, erTotal: 0, erOccupied: 0,
     wardOccupancy: 0, wardTotal: 0, wardOccupied: 0,
     referrals: 4 // Static for now
   });
 
-    // 1. Fetch Beds Data with User Details
+// Fetch Beds 
    const fetchBeds = async () => {
     const { data, error } = await supabase
       .from('beds')
@@ -43,16 +43,13 @@ const Overview = () => {
 
 
   const calculateStats = (data) => {
-    // Split data
     const erBeds = data.filter(b => b.ward_type === 'ER');
     const genBeds = data.filter(b => b.ward_type === 'General');
-
-    // Calculate ER Stats
+    // er
     const erTotal = erBeds.length;
     const erOcc = erBeds.filter(b => b.status === 'occupied').length;
     const erRate = erTotal > 0 ? Math.round((erOcc / erTotal) * 100) : 0;
-
-    // Calculate Ward Stats
+    // ward
     const wardTotal = genBeds.length;
     const wardOcc = genBeds.filter(b => b.status === 'occupied').length;
     const wardRate = wardTotal > 0 ? Math.round((wardOcc / wardTotal) * 100) : 0;
@@ -70,7 +67,7 @@ const Overview = () => {
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // Helper Filters
+  // helpers
   const erBeds = beds.filter(b => b.ward_type === 'ER');
   const gwBeds = beds.filter(b => b.ward_type === 'General');
 
@@ -81,7 +78,7 @@ const Overview = () => {
         <span className="status-pill">Status: Normal Operations</span>
       </div>
 
-      {/* --- DYNAMIC KPI CARDS --- */}
+      {/* KPI CARDS */}
       <div className="kpi-grid">
         
         <div className={`kpi-card ${
@@ -89,6 +86,7 @@ const Overview = () => {
             stats.erOccupancy >= 50 ? 'warning' : 
             'stable'
         }`}>
+          {/* er occupancy */}
           <h3>ER Occupancy</h3>
           <div className="kpi-value">{stats.erOccupancy}%</div>
           <div className="kpi-status">
@@ -97,8 +95,8 @@ const Overview = () => {
               : `${stats.erOccupied} occupied / ${stats.erTotal} total`}
           </div>
         </div>
-        
-        {/* CARD 2: GENERAL WARD (STATIC / PLACEHOLDER) */}
+
+        { /* gen ward occupancy */ }
        <div className={`kpi-card ${
             stats.wardOccupancy >= 80 ? 'critical' : 
             stats.wardOccupancy >= 50 ? 'warning' : 
@@ -111,7 +109,7 @@ const Overview = () => {
           </div>
        </div>
 
-        {/* CARD 3: REFERRALS (STATIC / PLACEHOLDER) */}
+        {/* REFERRALS static*/}
         <div className="kpi-card warning">
           <h3>Pending Incoming Referrals</h3>
           <div className="kpi-value">{stats.referrals}</div>
@@ -122,19 +120,18 @@ const Overview = () => {
       {/* MAIN CONTENT SPLIT */}
       <div className="content-split">
         
-       {/* --- TRACKER SECTION --- */}
-<div className="section-container">
-  
-  <div className="section-header">
-    <h4 className="section-title">Live Bed Tracker</h4>
-    <div className="legend">
-      <span><div className="dot" style={{background:'#B71C1C'}}></div> Occupied</span>
-      <span><div className="dot" style={{background:'#F59E0B'}}></div> Pending</span>
-      <span><div className="dot" style={{background:'#004D40'}}></div> Avail</span>
-    </div>
-  </div>
+       {/* trackers */}
+    <div className="section-container">
+      <div className="section-header">
+        <h4 className="section-title">Live Bed Tracker</h4>
+        <div className="legend">
+          <span><div className="dot" style={{background:'#B71C1C'}}></div> Occupied</span>
+          <span><div className="dot" style={{background:'#F59E0B'}}></div> Pending</span>
+          <span><div className="dot" style={{background:'#004D40'}}></div> Avail</span>
+        </div>
+      </div>
 
-  {/* --- SECTION 1: EMERGENCY ROOM --- */}
+  {/*er */}
   <h5 style={{ 
       margin: '20px 0 10px 0', 
       color: '#4B5563', 
@@ -157,7 +154,7 @@ const Overview = () => {
     {erBeds.length === 0 && <p style={{color: '#999', fontSize: '0.9rem'}}>No ER beds found.</p>}
   </div>
 
-  {/* --- SECTION 2: GENERAL WARD --- */}
+  {/* gen ward */}
   <h5 style={{ 
       margin: '30px 0 10px 0', 
       color: '#4B5563', 
@@ -182,7 +179,7 @@ const Overview = () => {
 
 </div>
 
-        {/* RIGHT: INCOMING REFERRALS (Static for now) */}
+        {/*referrals static*/}
         <div className="section-container">
           <div className="section-header">
             <div>
@@ -196,7 +193,7 @@ const Overview = () => {
         </div>
       </div>
 
-      {/* MODAL POPUP (Keep your existing modal code here) */}
+      {/*popups */}
       {selectedBed && (
         <div className="modal-overlay" onClick={() => setSelectedBed(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
