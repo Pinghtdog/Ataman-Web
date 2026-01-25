@@ -4,6 +4,8 @@ import { supabase } from "./supabaseClient";
 
 import DashboardLayout from "./layouts/DashboardLayout";
 import Overview from "./pages/Overview";
+import ReferralCenter from "./pages/ReferralCenter";
+import ServiceAndFacilities from "./pages/ServiceAndFacilities";
 import BedManagement from "./pages/BedManagement";
 import Telemed from "./pages/Telemed";
 import Charting from "./pages/Charting";
@@ -76,6 +78,8 @@ export default function App() {
           <Route path="/" element={<DashboardLayout userRole={userRole} />}>
             <Route index element={<Overview />} />
             <Route path="beds" element={<BedManagement />} />
+            <Route path="referrals" element={<ReferralCenter />} />
+            <Route path="services" element={<ServiceAndFacilities />} />
             <Route path="telemed" element={<Telemed />} />
             <Route path="charting" element={<Charting />} />
             <Route path="settings" element={<Settings />} />

@@ -1,3 +1,20 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --color-primary: #00695c;
+  --color-primary-50: #e0f2f1;
+  --color-primary-900: #004d40;
+  --color-danger: #d32f2f;
+}
+
+@layer base {
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background-color: #f8fafc;
+    font-family: "Inter", system-ui, sans-serif;
+  }
+}
