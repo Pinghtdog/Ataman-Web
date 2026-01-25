@@ -8,8 +8,8 @@ export default {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#00695C', // Deep Teal
-          light: '#B2DFDB', // Light Teal
+          DEFAULT: '#00695C',
+          light: '#B2DFDB',
           dark: '#004D40',
           50: '#e0f2f1',
           100: '#b2dfdb',
@@ -23,7 +23,7 @@ export default {
           900: '#004d40',
         },
         accent: {
-          DEFAULT: '#1976D2', // Blue
+          DEFAULT: '#1976D2',
           light: '#63a4ff',
           dark: '#004ba0',
         },
@@ -37,6 +37,9 @@ export default {
           primary: '#333333',
           secondary: '#666666',
         }
+      },
+      fontFamily: {
+        sans: ['Poppins', 'system-ui', 'sans-serif'],
       },
     },
   },
