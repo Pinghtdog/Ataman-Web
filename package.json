@@ -1,5 +1,5 @@
 {
-  "name": "nbc",
+  "name": "ataman-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,24 +10,41 @@
     "preview": "vite preview"
   },
   "dependencies": {
+<<<<<<< HEAD
     "@supabase/supabase-js": "^2.91.1",
     "lucide-react": "^0.563.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0"
+=======
+    "@supabase/supabase-js": "^2.48.1",
+    "lucide-react": "^0.474.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.1.5"
+>>>>>>> 048ed8a202c9a0870a1ea033363e1e187f0e3e7f
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react-swc": "^4.2.2",
+<<<<<<< HEAD
     "autoprefixer": "^10.4.23",
+=======
+    "autoprefixer": "^10.4.20",
+>>>>>>> 048ed8a202c9a0870a1ea033363e1e187f0e3e7f
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+<<<<<<< HEAD
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
+=======
+    "postcss": "^8.5.1",
+    "tailwindcss": "^4.0.3",
+>>>>>>> 048ed8a202c9a0870a1ea033363e1e187f0e3e7f
     "vite": "^7.2.4"
   }
 }
