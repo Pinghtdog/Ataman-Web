@@ -1,352 +1,393 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
-import { User, AlertTriangle } from 'lucide-react'; // Added AlertTriangle for the warning icon
-import './BedManagement.css';
+import React, { useState, useEffect } from "react";
+import { supabase } from "../supabaseClient";
+import { User, AlertTriangle, BedDouble, Search, X } from "lucide-react";
 
 const BedManagement = () => {
   const [beds, setBeds] = useState([]);
-  
+
   // MODAL & SEARCH STATES
   const [selectedBed, setSelectedBed] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [suggestions, setSuggestions] = useState([]); 
-  const [chosenPatient, setChosenPatient] = useState(null); 
+  const [searchTerm, setSearchTerm] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [chosenPatient, setChosenPatient] = useState(null);
   const [showDischargeConfirm, setShowDischargeConfirm] = useState(false);
 
   // 1. FETCH DATA (Real-time)
   const fetchBeds = async () => {
     const { data, error } = await supabase
-      .from('beds')
+      .from("beds")
       .select(`*, users ( id, first_name, last_name, birth_date )`)
-      .order('id', { ascending: true });
+      .order("id", { ascending: true });
 
-    if (error) console.error('Error fetching beds:', error);
+    if (error) console.error("Error fetching beds:", error);
     else setBeds(data || []);
   };
 
   useEffect(() => {
     fetchBeds();
-
     const channel = supabase
-      .channel('bed-management-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'beds' }, () => {
-        fetchBeds();
-      })
+      .channel("bed-management-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "beds" },
+        fetchBeds,
+      )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
 
-  // 2. AUTO-SUGGEST LOGIC (Debounced)
+  // 2. AUTO-SUGGEST LOGIC
   useEffect(() => {
     const fetchSuggestions = async () => {
       if (searchTerm.length < 2 || chosenPatient) {
         setSuggestions([]);
         return;
       }
-
       const { data } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, birth_date')
-        .ilike('first_name', `%${searchTerm}%`)
+        .from("users")
+        .select("id, first_name, last_name, birth_date")
+        .ilike("first_name", `%${searchTerm}%`)
         .limit(5);
-
       setSuggestions(data || []);
     };
-
     const timeoutId = setTimeout(fetchSuggestions, 300);
     return () => clearTimeout(timeoutId);
   }, [searchTerm, chosenPatient]);
 
   // 3. HANDLERS
-
-  // A. Select a patient from dropdown
   const handleSelectPatient = (user) => {
     setChosenPatient(user);
     setSearchTerm(`${user.first_name} ${user.last_name}`);
-    setSuggestions([]); 
+    setSuggestions([]);
   };
 
-  // B. Confirm Assignment (Updates DB)
   const executeAssignment = async () => {
-    if (!chosenPatient || !selectedBed) {
-      alert("Please select a patient from the list.");
-      return;
-    }
-
+    if (!chosenPatient || !selectedBed) return;
     const { error } = await supabase
-      .from('beds')
-      .update({ 
-        status: 'occupied', 
-        patient_id: chosenPatient.id 
-      })
-      .eq('id', selectedBed.id);
+      .from("beds")
+      .update({ status: "occupied", patient_id: chosenPatient.id })
+      .eq("id", selectedBed.id);
 
-    if (error) {
-      alert("Error updating bed: " + error.message);
-    } else {
-      await fetchBeds(); 
+    if (!error) {
+      await fetchBeds();
       setSelectedBed(null);
-      setSearchTerm('');
+      setSearchTerm("");
       setChosenPatient(null);
     }
   };
 
-  // C. PREPARE Discharge (Opens Modal)
   const openDischargeModal = (bed) => {
-    setSelectedBed(bed);           // Set the bed we want to discharge
-    setShowDischargeConfirm(true); // Show the popup
+    setSelectedBed(bed);
+    setShowDischargeConfirm(true);
   };
 
-  // D. EXECUTE Discharge (Actual DB Update)
   const executeDischarge = async () => {
     if (!selectedBed) return;
+    const { error } = await supabase
+      .from("beds")
+      .update({ status: "cleaning", patient_id: null })
+      .eq("id", selectedBed.id);
 
-    try {
-      // Update Supabase: Set status to 'cleaning' & remove patient
-      const { error } = await supabase
-        .from('beds')
-        .update({ 
-          status: 'cleaning', 
-          patient_id: null 
-        })
-        .eq('id', selectedBed.id);
-
-      if (error) throw error;
-
-      // Success! Close everything and refresh
-      setShowDischargeConfirm(false); 
-      setSelectedBed(null);           
+    if (!error) {
+      setShowDischargeConfirm(false);
+      setSelectedBed(null);
       await fetchBeds();
-      
-    } catch (error) {
-      console.error('Error discharging:', error);
-      alert('Failed to discharge. Check console.');
     }
   };
 
-  // E. Mark Ready (Cleaning -> Available)
   const handleMarkReady = async (id) => {
     const { error } = await supabase
-      .from('beds')
-      .update({ status: 'available' })
-      .eq('id', id);
-
+      .from("beds")
+      .update({ status: "available" })
+      .eq("id", id);
     if (!error) await fetchBeds();
   };
 
-  // 4. STATS & FILTERING
-  const totalBeds = beds.length;
-  const occupied = beds.filter(b => b.status === 'occupied').length;
-  const available = beds.filter(b => b.status === 'available').length;
-  const cleaning = beds.filter(b => b.status === 'cleaning').length;
+  // Stats
+  const stats = {
+    total: beds.length,
+    occupied: beds.filter((b) => b.status === "occupied").length,
+    available: beds.filter((b) => b.status === "available").length,
+    cleaning: beds.filter((b) => b.status === "cleaning").length,
+  };
 
-  const erBeds = beds.filter(b => b.ward_type === 'ER');
-  const wardBeds = beds.filter(b => b.ward_type === 'General');
+  const erBeds = beds.filter((b) => b.ward_type === "ER");
+  const wardBeds = beds.filter((b) => b.ward_type === "General");
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">Bed Management</h2>
+    <div className="p-8 bg-gray-50 min-h-screen">
+      <h2 className="text-3xl font-extrabold text-gray-800 tracking-tight mb-6 flex items-center gap-3">
+        Bed Management
+      </h2>
 
-      {/* STATS CARDS */}
-      <div className="stats-container">
-        <div className="stat-card">
-          <div className="stat-label">Total Beds</div>
-          <div className="stat-number">{totalBeds}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Occupied</div>
-          <div className="stat-number red">{occupied}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Available</div>
-          <div className="stat-number green">{available}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">To Be Cleaned</div>
-          <div className="stat-number yellow">{cleaning}</div>
-        </div>
+      {/* STATS ROW */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+        <StatCard label="Total Beds" value={stats.total} />
+        <StatCard
+          label="Occupied"
+          value={stats.occupied}
+          color="text-red-600"
+        />
+        <StatCard
+          label="Available"
+          value={stats.available}
+          color="text-[#00695C]"
+        />
+        <StatCard
+          label="To Be Cleaned"
+          value={stats.cleaning}
+          color="text-amber-500"
+        />
       </div>
 
-      {/* --- SECTION 1: EMERGENCY ROOM --- */}
-      <div className="mb-8">
-        <h3 className="text-xl font-bold text-gray-700 mb-4 border-b pb-2">Emergency Room (ER)</h3>
-        {erBeds.length === 0 && <p className="text-gray-400 italic">No ER beds configured.</p>}
-        
-        <div className="management-grid">
+      {/* EMERGENCY ROOM SECTION */}
+      <div className="mb-10">
+        <div className="flex items-center justify-between mb-6 border-b border-gray-200 pb-3">
+          <h3 className="text-lg font-bold text-gray-700">
+            Emergency Room (ER)
+          </h3>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+            {erBeds.length} Units
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {erBeds.map((bed) => (
-            <BedCard 
-              key={bed.id} 
-              bed={bed} 
-              onDischargeClick={openDischargeModal} 
-              onMarkReady={handleMarkReady} 
-              onAssign={setSelectedBed} 
+            <BedCard
+              key={bed.id}
+              bed={bed}
+              onDischarge={openDischargeModal}
+              onReady={handleMarkReady}
+              onAssign={setSelectedBed}
             />
           ))}
         </div>
       </div>
 
-      {/* --- SECTION 2: GENERAL WARD --- */}
-      <div>
-        <h3 className="text-xl font-bold text-gray-700 mb-4 border-b pb-2">General Ward</h3>
-        {wardBeds.length === 0 && <p className="text-gray-400 italic">No General Ward beds configured.</p>}
-
-        <div className="management-grid">
+      {/* GENERAL WARD SECTION */}
+      <div className="mb-10">
+        <div className="flex items-center justify-between mb-6 border-b border-gray-200 pb-3">
+          <h3 className="text-lg font-bold text-gray-700">General Ward</h3>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+            {wardBeds.length} Units
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {wardBeds.map((bed) => (
-            <BedCard 
-              key={bed.id} 
-              bed={bed} 
-              onDischargeClick={openDischargeModal} 
-              onMarkReady={handleMarkReady} 
-              onAssign={setSelectedBed} 
+            <BedCard
+              key={bed.id}
+              bed={bed}
+              onDischarge={openDischargeModal}
+              onReady={handleMarkReady}
+              onAssign={setSelectedBed}
             />
           ))}
         </div>
       </div>
 
-      {/* --- ASSIGN PATIENT MODAL --- */}
+      {/* MODAL: ASSIGN PATIENT */}
       {selectedBed && !showDischargeConfirm && (
-        <div className="modal-overlay" onClick={() => setSelectedBed(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <h3 className="modal-title">Assign Patient to {selectedBed.bed_label}</h3>
-            
-            <div className="input-group">
-              <input 
-                type="text" 
-                className="modal-input"
-                placeholder="Type patient name (e.g. 'Jasmin')..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setChosenPatient(null);
-                }}
-                autoFocus
-              />
-              
-              {/* DROPDOWN LIST */}
-              {suggestions.length > 0 && (
-                <ul className="suggestions-list">
-                  {suggestions.map((user) => (
-                    <li 
-                      key={user.id} 
-                      className="suggestion-item"
-                      onClick={() => handleSelectPatient(user)}
-                    >
-                      <span className="suggestion-name-text">
-                        {user.first_name} {user.last_name}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-gray-800 tracking-tight">
+                  Assign to {selectedBed.bed_label}
+                </h3>
+                <button
+                  onClick={() => setSelectedBed(null)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
 
-            <div className="modal-actions">
-              <button className="btn-cancel" onClick={() => setSelectedBed(null)}>Cancel</button>
-              <button 
-                className="btn-confirm" 
-                onClick={executeAssignment}
-                style={{ opacity: chosenPatient ? 1 : 0.5, cursor: chosenPatient ? 'pointer' : 'not-allowed' }}
-              >
-                Confirm Assignment
-              </button>
+              <div className="relative mb-8">
+                <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block tracking-widest">
+                  Search Patient
+                </label>
+                <div className="relative">
+                  <Search
+                    className="absolute left-3 top-3.5 text-gray-400"
+                    size={16}
+                  />
+                  <input
+                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#00695C] focus:bg-white transition-all text-sm"
+                    placeholder="Enter patient name..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setChosenPatient(null);
+                    }}
+                    autoFocus
+                  />
+                </div>
+
+                {/* SUGGESTIONS LIST - High Z-Index to prevent clipping */}
+                {suggestions.length > 0 && (
+                  <ul className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-100 rounded-xl shadow-2xl z-[100] overflow-hidden">
+                    {suggestions.map((user) => (
+                      <li
+                        key={user.id}
+                        onClick={() => handleSelectPatient(user)}
+                        className="p-4 hover:bg-teal-50 cursor-pointer flex items-center gap-3 border-b last:border-0 border-gray-50"
+                      >
+                        <div className="bg-teal-100 p-2 rounded-full text-teal-600 shrink-0">
+                          <User size={14} />
+                        </div>
+                        <span className="font-bold text-gray-700 text-sm">
+                          {user.first_name} {user.last_name}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSelectedBed(null)}
+                  className="flex-1 py-3 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeAssignment}
+                  disabled={!chosenPatient}
+                  className="flex-1 py-3 bg-[#00695C] text-white text-sm font-bold rounded-xl shadow-lg shadow-teal-900/20 hover:bg-[#004D40] disabled:opacity-50 transition-all uppercase tracking-wider"
+                >
+                  Confirm
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- NEW: DISCHARGE CONFIRMATION POPUP --- */}
+      {/* MODAL: DISCHARGE CONFIRM */}
       {showDischargeConfirm && selectedBed && (
-        <div className="modal-overlay" style={{zIndex: 9999}}>
-          <div className="modal-box" style={{maxWidth: '400px', textAlign: 'center'}} onClick={(e) => e.stopPropagation()}>
-            
-            <div style={{
-              width: '50px', height: '50px', background: '#FEE2E2', 
-              borderRadius: '50%', color: '#DC2626', display: 'flex', 
-              alignItems: 'center', justifyContent: 'center', margin: '0 auto 15px auto'
-            }}>
-              <AlertTriangle size={24} />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center animate-in fade-in zoom-in duration-200">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle size={32} />
             </div>
-            
-            <h3 className="modal-title" style={{justifyContent: 'center'}}>Confirm Discharge</h3>
-            
-            <p style={{color: '#666', fontSize: '0.95rem', margin: '10px 0 20px 0'}}>
-              Are you sure you want to discharge <strong>{selectedBed.users?.first_name} {selectedBed.users?.last_name}</strong>?
-              <br/><br/>
-              <span style={{fontSize: '0.85rem', color: '#999'}}>
-                The bed <strong>{selectedBed.bed_label}</strong> will be marked as "Cleaning".
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              Confirm Discharge
+            </h3>
+            <p className="text-gray-500 mb-8 text-sm leading-relaxed">
+              Are you sure you want to discharge{" "}
+              <span className="font-bold text-gray-800">
+                {selectedBed.users?.first_name} {selectedBed.users?.last_name}
               </span>
+              ?
+              <br />
+              This bed will be moved to cleaning.
             </p>
-
-            <div className="modal-actions" style={{justifyContent: 'center'}}>
-              <button 
-                className="btn-cancel" 
+            <div className="flex gap-3">
+              <button
                 onClick={() => {
                   setShowDischargeConfirm(false);
                   setSelectedBed(null);
                 }}
+                className="flex-1 py-3 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors uppercase"
               >
                 Cancel
               </button>
-              
-              <button 
-                className="btn-confirm" 
-                style={{backgroundColor: '#DC2626', border: 'none'}} 
+              <button
                 onClick={executeDischarge}
+                className="flex-1 py-3 bg-red-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-red-900/20 hover:bg-red-700 transition-all uppercase"
               >
-                Confirm Discharge
+                Discharge
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };
 
-// --- SUB-COMPONENT FOR BED CARDS ---
-const BedCard = ({ bed, onDischargeClick, onMarkReady, onAssign }) => {
+// HELPER COMPONENTS
+const StatCard = ({ label, value, color = "text-gray-900" }) => (
+  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
+      {label}
+    </p>
+    <p className={`text-3xl font-black ${color}`}>{value}</p>
+  </div>
+);
+
+const BedCard = ({ bed, onDischarge, onReady, onAssign }) => {
+  const statusConfig = {
+    occupied: { header: "bg-red-700", label: "Occupied" },
+    cleaning: { header: "bg-amber-500", label: "Cleaning" },
+    available: { header: "bg-[#004D40]", label: "Vacant" },
+  };
+
+  const config = statusConfig[bed.status] || statusConfig.available;
+
   return (
-    <div className={`manage-card ${bed.status}`}>
-      <div className="card-header">{bed.bed_label}</div>
-      <div className="card-body">
-        
-        {/* CASE: OCCUPIED */}
-        {bed.status === 'occupied' && (
-          <>
-            <div className="patient-icon"><User size={20} /></div>
-            <div className="patient-name">
-              {bed.users ? `${bed.users.first_name} ${bed.users.last_name}` : 'Unknown'}
-            </div>
-            {/* UPDATED: Pass the WHOLE bed object, not just ID */}
-            <button className="action-btn btn-discharge" onClick={() => onDischargeClick(bed)}>
-              Discharge
-            </button>
-          </>
-        )}
+    <div className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100 flex flex-col h-full group transition-all hover:shadow-xl">
+      {/* Header - Fixed Height */}
+      <div
+        className={`${config.header} h-10 flex items-center justify-center text-white font-black text-[10px] uppercase tracking-widest`}
+      >
+        {bed.bed_label}
+      </div>
 
-        {/* CASE: CLEANING */}
-        {bed.status === 'cleaning' && (
-          <>
-            <div className="status-text">CLEANING</div>
-            <button className="action-btn btn-ready" onClick={() => onMarkReady(bed.id)}>
-              Mark Ready
-            </button>
-          </>
-        )}
+      {/* Body - Reduced min-h and uses flex-grow to push button down */}
+      <div className="p-4 flex flex-col items-center flex-grow min-h-[150px]">
+        {/* Content Section */}
+        <div className="flex flex-col items-center justify-center flex-grow text-center w-full">
+          {bed.status === "occupied" ? (
+            <>
+              <div className="bg-red-50 p-2 rounded-full text-red-600 mb-2">
+                <User size={20} />
+              </div>
+              <p className="font-black text-gray-800 leading-tight text-sm line-clamp-2 px-1">
+                {bed.users?.first_name} {bed.users?.last_name}
+              </p>
+              <p className="text-[9px] font-bold text-gray-400 uppercase mt-1 tracking-tighter">
+                Patient Assigned
+              </p>
+            </>
+          ) : bed.status === "cleaning" ? (
+            <p className="font-black text-amber-500 text-[10px] tracking-[0.2em] uppercase italic animate-pulse">
+              Sanitizing...
+            </p>
+          ) : (
+            <p className="font-black text-gray-200 text-[10px] tracking-[0.2em] uppercase">
+              Available
+            </p>
+          )}
+        </div>
 
-        {/* CASE: AVAILABLE */}
-        {bed.status === 'available' && (
-          <>
-            <div className="status-text">VACANT</div>
-            <button className="action-btn btn-assign" onClick={() => onAssign(bed)}>
-              Assign
+        {/* Action Button Section - Locked to Bottom */}
+        <div className="mt-auto w-full pt-4">
+          {bed.status === "occupied" ? (
+            <button
+              onClick={() => onDischarge(bed)}
+              className="w-full py-2 bg-white border-2 border-red-50 text-red-600 font-bold rounded-lg text-[9px] hover:bg-red-600 hover:text-white transition-all shadow-sm"
+            >
+              DISCHARGE
             </button>
-          </>
-        )}
+          ) : bed.status === "cleaning" ? (
+            <button
+              onClick={() => onReady(bed.id)}
+              className="w-full py-2 bg-amber-500 text-white font-bold rounded-lg text-[9px] hover:bg-amber-600 shadow-md shadow-amber-200 transition-all"
+            >
+              MARK READY
+            </button>
+          ) : (
+            <button
+              onClick={() => onAssign(bed)}
+              className="w-full py-2 bg-[#004D40] text-white font-bold rounded-lg text-[9px] hover:bg-[#005a4b] shadow-lg shadow-teal-900/10 transition-all"
+            >
+              ASSIGN PATIENT
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

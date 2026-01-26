@@ -76,9 +76,18 @@ const Charting = () => {
     return Math.abs(ageDate.getUTCFullYear() - 1970);
   };
 
+  if (loading)
+    return (
+      <div className="p-10 text-gray-400 font-bold animate-pulse text-center">
+        Charting Digital Data...
+      </div>
+    );
+
   return (
     <div className="p-8 bg-gray-50 min-h-screen">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Patient Records</h2>
+      <h2 className="text-3xl font-extrabold text-gray-800 tracking-tight mb-6">
+        Patient Records
+      </h2>
 
       {/* SEARCH BAR */}
       <form onSubmit={handleSearch} className="flex gap-2 mb-8 max-w-3xl">

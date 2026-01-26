@@ -6,6 +6,7 @@ const Telemed = () => {
   const [queue, setQueue] = useState([]);
   const [activePatient, setActivePatient] = useState(null);
   const [note, setNote] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchQueue = async () => {
@@ -21,8 +22,12 @@ const Telemed = () => {
         )
         .in("status", ["scheduled", "active"]);
 
-      if (error) console.error(error);
-      else setQueue(data);
+      if (error) {
+        console.error(error);
+      } else {
+        setLoading(false);
+        setQueue(data);
+      }
     };
 
     fetchQueue();
@@ -57,6 +62,13 @@ const Telemed = () => {
       setNote("");
     }
   };
+
+  if (loading)
+    return (
+      <div className="p-10 text-gray-400 font-bold animate-pulse text-center">
+        Loading Telemdicine Hub...
+      </div>
+    );
 
   return (
     <div className="flex h-[calc(100vh-100px)] gap-6 p-6 bg-gray-50">
