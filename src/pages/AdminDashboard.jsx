@@ -1,20 +1,47 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { CheckCircle, AlertTriangle } from "lucide-react";
-// import './Overview.css';
+import {
+  CheckCircle,
+  AlertTriangle,
+  Trash2,
+  RefreshCw,
+  PlusCircle,
+  LayoutGrid,
+} from "lucide-react";
 
 const AdminDashboard = () => {
   const [newBedLabel, setNewBedLabel] = useState("");
   const [wardType, setWardType] = useState("General");
   const [facilityId, setFacilityId] = useState(2);
 
-  // popup modal state
+  // Data State
+  const [beds, setBeds] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Popup State
   const [modal, setModal] = useState({ show: false, type: "", message: "" });
 
+  // 1. FETCH BEDS
+  const fetchBeds = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from("beds")
+      .select("*")
+      .order("bed_label", { ascending: true });
+
+    if (error) console.error("Error fetching beds:", error);
+    else setBeds(data || []);
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchBeds();
+  }, []);
+
+  // 2. ADD BED
   const handleAddBed = async (e) => {
     e.preventDefault();
 
-    // insert bed
     const { error } = await supabase.from("beds").insert([
       {
         bed_label: newBedLabel,
@@ -23,7 +50,7 @@ const AdminDashboard = () => {
         facility_id: facilityId,
       },
     ]);
-    //modal handling
+
     if (error) {
       setModal({
         show: true,
@@ -34,100 +61,187 @@ const AdminDashboard = () => {
       setModal({
         show: true,
         type: "success",
-        message: `Bed ${newBedLabel} added successfully!`,
+        message: `Bed ${newBedLabel} successfully registered.`,
       });
-      setNewBedLabel(""); // Clear input
+      setNewBedLabel("");
+      fetchBeds();
     }
   };
 
-  const closeModal = () => {
-    setModal({ ...modal, show: false });
+  // 3. DELETE BED
+  const handleDeleteBed = async (id, label) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to permanently delete bed ${label}?`,
+      )
+    )
+      return;
+
+    const { error } = await supabase.from("beds").delete().eq("id", id);
+    if (error) {
+      setModal({
+        show: true,
+        type: "error",
+        message: "Failed to delete: " + error.message,
+      });
+    } else {
+      fetchBeds();
+    }
   };
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-6">Admin Settings</h2>
-
-      <div className="section-container" style={{ maxWidth: "500px" }}>
-        <h4 className="section-title">Add New Bed</h4>
-
-        <form
-          onSubmit={handleAddBed}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "15px",
-            marginTop: "20px",
-          }}
-        >
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "5px",
-                fontWeight: "600",
-                fontSize: "0.9rem",
-              }}
-            >
-              Bed Label
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. ER-05"
-              value={newBedLabel}
-              onChange={(e) => setNewBedLabel(e.target.value)}
-              className="modal-input"
-              required
-            />
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "5px",
-                fontWeight: "600",
-                fontSize: "0.9rem",
-              }}
-            >
-              Ward Section
-            </label>
-            <select
-              value={wardType}
-              onChange={(e) => setWardType(e.target.value)}
-              className="modal-input"
-              style={{ backgroundColor: "white" }}
-            >
-              <option value="ER">Emergency Room</option>
-              <option value="General">General Ward</option>
-            </select>
-          </div>
-
-          <button className="btn-confirm" style={{ marginTop: "10px" }}>
-            + Add Bed to System
-          </button>
-        </form>
+    <div className="p-10 bg-[#F8FAFC] min-h-screen">
+      <div className="mb-10">
+        <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
+          Admin Dashboard
+        </h1>
+        <p className="text-gray-500 text-sm font-medium">
+          System Configuration & Asset Management
+        </p>
       </div>
 
+      <div className="flex flex-col lg:flex-row gap-10 items-start">
+        {/* --- SECTION 1: ADD NEW BED --- */}
+        <div className="w-full lg:w-1/3 bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100 relative overflow-hidden">
+          <div className="absolute left-0 top-0 bottom-0 w-2 bg-[#00695C]" />
+
+          <div className="flex items-center gap-3 mb-8">
+            <PlusCircle size={20} className="text-[#00695C] opacity-50" />
+            <h2 className="text-lg font-bold text-gray-800 uppercase tracking-tight">
+              Register New Asset
+            </h2>
+          </div>
+
+          <form onSubmit={handleAddBed} className="space-y-6">
+            <div>
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest block mb-2">
+                Bed Label / ID
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. ER-05"
+                value={newBedLabel}
+                onChange={(e) => setNewBedLabel(e.target.value)}
+                className="w-full p-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-[#00695C] text-sm font-medium transition-all"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest block mb-2">
+                Ward Assignment
+              </label>
+              <select
+                value={wardType}
+                onChange={(e) => setWardType(e.target.value)}
+                className="w-full p-4 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-[#00695C] text-sm font-medium transition-all appearance-none cursor-pointer"
+              >
+                <option value="ER">Emergency Room</option>
+                <option value="General">General Ward</option>
+                <option value="ICU">Intensive Care Unit</option>
+                <option value="Pediatrics">Pediatrics</option>
+                <option value="Maternity">Maternity</option>
+                <option value="Surgery">Surgery</option>
+              </select>
+            </div>
+
+            <button className="w-full py-4 bg-gray-900 text-white text-[10px] font-bold uppercase tracking-widest rounded-2xl hover:bg-black transition-all shadow-lg shadow-gray-200 mt-4 active:scale-95">
+              + Add to Registry
+            </button>
+          </form>
+        </div>
+
+        {/* --- SECTION 2: MANAGE BEDS --- */}
+        <div className="flex-1 w-full bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex items-center gap-3">
+              <LayoutGrid size={20} className="text-gray-300" />
+              <h2 className="text-lg font-bold text-gray-800 uppercase tracking-tight">
+                Active Bed Registry
+              </h2>
+            </div>
+            <button
+              onClick={fetchBeds}
+              className="p-2 text-gray-400 hover:text-[#00695C] transition-colors"
+              title="Refresh Registry"
+            >
+              <RefreshCw
+                size={18}
+                className={isLoading ? "animate-spin" : ""}
+              />
+            </button>
+          </div>
+
+          <div className="overflow-hidden border border-gray-50 rounded-[2rem]">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                  <th className="p-5 font-medium">Identifier</th>
+                  <th className="p-5 font-medium">Location</th>
+                  <th className="p-5 font-medium text-center">Live Status</th>
+                  <th className="p-5 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {beds.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan="4"
+                      className="p-10 text-center text-gray-300 font-medium text-xs uppercase tracking-widest italic"
+                    >
+                      No assets found in registry.
+                    </td>
+                  </tr>
+                ) : (
+                  beds.map((bed) => (
+                    <tr
+                      key={bed.id}
+                      className="hover:bg-gray-50/50 transition-colors group"
+                    >
+                      <td className="p-5 font-bold text-gray-800 text-sm uppercase">
+                        {bed.bed_label}
+                      </td>
+                      <td className="p-5 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                        {bed.ward_type}
+                      </td>
+                      <td className="p-5 text-center">
+                        <span
+                          className={`px-4 py-1 rounded-xl text-[9px] font-bold uppercase tracking-widest border ${
+                            bed.status === "occupied"
+                              ? "bg-red-50 text-red-600 border-red-100"
+                              : "bg-emerald-50 text-emerald-600 border-emerald-100"
+                          }`}
+                        >
+                          {bed.status}
+                        </span>
+                      </td>
+                      <td className="p-5 text-right">
+                        <button
+                          onClick={() => handleDeleteBed(bed.id, bed.bed_label)}
+                          className="p-2.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* --- NOTIFICATION MODAL --- */}
       {modal.show && (
-        <div className="modal-overlay" style={{ zIndex: 9999 }}>
-          <div
-            className="modal-box"
-            style={{ maxWidth: "400px", textAlign: "center" }}
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl text-center animate-in zoom-in duration-200">
             <div
-              style={{
-                width: "60px",
-                height: "60px",
-                background: modal.type === "success" ? "#D1FAE5" : "#FEE2E2",
-                borderRadius: "50%",
-                color: modal.type === "success" ? "#059669" : "#DC2626",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 15px auto",
-              }}
+              className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 ${
+                modal.type === "success"
+                  ? "bg-emerald-50 text-emerald-600"
+                  : "bg-red-50 text-red-600"
+              }`}
             >
               {modal.type === "success" ? (
                 <CheckCircle size={32} />
@@ -136,34 +250,23 @@ const AdminDashboard = () => {
               )}
             </div>
 
-            <h3
-              className="modal-title"
-              style={{ justifyContent: "center", fontSize: "1.25rem" }}
-            >
-              {modal.type === "success" ? "Success!" : "Error"}
+            <h3 className="text-xl font-bold text-gray-800 mb-2 uppercase tracking-tight">
+              {modal.type === "success" ? "Success" : "System Error"}
             </h3>
 
-            <p
-              style={{
-                color: "#666",
-                fontSize: "0.95rem",
-                margin: "10px 0 25px 0",
-              }}
-            >
+            <p className="text-gray-400 mb-8 text-xs font-medium leading-relaxed">
               {modal.message}
             </p>
 
             <button
-              className="btn-confirm"
-              style={{
-                width: "100%",
-                backgroundColor:
-                  modal.type === "success" ? "#059669" : "#DC2626",
-                border: "none",
-              }}
-              onClick={closeModal}
+              onClick={() => setModal({ ...modal, show: false })}
+              className={`w-full py-4 rounded-2xl text-[10px] font-bold uppercase tracking-widest text-white transition-all shadow-lg ${
+                modal.type === "success"
+                  ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-900/10"
+                  : "bg-red-600 hover:bg-red-700 shadow-red-900/10"
+              }`}
             >
-              OK
+              Acknowledge
             </button>
           </div>
         </div>

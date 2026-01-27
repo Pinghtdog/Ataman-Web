@@ -8,7 +8,6 @@ const Telemed = () => {
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // 1. Fetch live queue from Supabase
   const fetchQueue = async () => {
     const { data, error } = await supabase
       .from("telemed_sessions")
@@ -30,7 +29,6 @@ const Telemed = () => {
   useEffect(() => {
     fetchQueue();
 
-    // Real-time subscription: Update queue when sessions are created or updated
     const channel = supabase
       .channel("telemed-live")
       .on(
@@ -43,7 +41,6 @@ const Telemed = () => {
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // 2. Start Call (Update status to active)
   const handleAccept = async (session) => {
     const { error } = await supabase
       .from("telemed_sessions")
@@ -53,7 +50,6 @@ const Telemed = () => {
     if (!error) setActiveSession(session);
   };
 
-  // 3. Save Clinical Notes
   const handleSaveNote = async () => {
     if (!activeSession || !note) return;
 
@@ -97,7 +93,7 @@ const Telemed = () => {
         <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
           Tele-Ataman Console
         </h1>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mt-1">
+        <p className="text-gray-500 text-sm font-medium">
           Live Virtual Consultation Hub
         </p>
       </div>
@@ -105,7 +101,7 @@ const Telemed = () => {
       <div className="grid grid-cols-12 gap-10">
         {/* LEFT SIDE: QUEUE (Referral Center Style) */}
         <div className="col-span-4 space-y-6">
-          <div className="bg-[#00695C] p-8 rounded-[2.5rem] text-white shadow-xl shadow-emerald-900/20 relative overflow-hidden">
+          <div className="bg-[#00695C] p-8 rounded-[1rem] text-white shadow-xl shadow-emerald-900/20 relative overflow-hidden">
             <div className="absolute right-[-10px] top-[-10px] opacity-10 rotate-12">
               <Video size={120} />
             </div>

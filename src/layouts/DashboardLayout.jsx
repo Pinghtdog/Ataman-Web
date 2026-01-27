@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import {
@@ -15,18 +15,62 @@ import {
 } from "lucide-react";
 import "./DashboardLayout.css";
 
-// dashboard
 const DashboardLayout = ({ userRole }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  //logout
+  // State for dynamic data
+  const [userName, setUserName] = useState("Staff");
+  const [hospitalCode, setHospitalCode] = useState("NCGH"); // Default fallback
+
+  useEffect(() => {
+    const fetchUserAndFacility = async () => {
+      // 1. Get current authenticated user
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        // --- A. FETCH USER NAME ---
+        const { data: userData } = await supabase
+          .from("users")
+          .select("first_name, last_name")
+          .eq("id", user.id)
+          .single();
+
+        if (userData && userData.first_name && userData.last_name) {
+          setUserName(`${userData.first_name} ${userData.last_name}`);
+        } else {
+          const emailName = user.email ? user.email.split("@")[0] : "Staff";
+          setUserName(emailName);
+        }
+
+        // --- B. FETCH HOSPITAL SHORT CODE (NEW) ---
+        const { data: staffData } = await supabase
+          .from("facility_staff")
+          .select(
+            `
+            facility_id,
+            facilities ( short_code )  // <--- Changed 'name' to 'short_code'
+          `,
+          )
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (staffData && staffData.facilities) {
+          setHospitalCode(staffData.facilities.short_code);
+        }
+      }
+    };
+
+    fetchUserAndFacility();
+  }, []);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/");
   };
 
-  // nav items
   const navItems = [
     { name: "Overview", path: "/", icon: <LayoutDashboard size={18} /> },
     { name: "Bed Management", path: "/beds", icon: <BedDouble size={18} /> },
@@ -49,7 +93,6 @@ const DashboardLayout = ({ userRole }) => {
     { name: "Settings", path: "/settings", icon: <Settings size={18} /> },
   ];
 
-  // Helper to get current page title (including Admin page)
   const getCurrentTitle = () => {
     if (location.pathname === "/admin") return "Admin Dashboard";
     return (
@@ -64,10 +107,10 @@ const DashboardLayout = ({ userRole }) => {
       <aside className="sidebar">
         <div className="brand">
           <h1>A.T.A.M.A.N.</h1>
-          <small>NCGH Command Center</small>
+          {/* --- UPDATED: Uses Short Code --- */}
+          <small>{hospitalCode} Command Center</small>
         </div>
 
-        {/* Nav Links */}
         <nav className="nav-menu">
           {navItems.map((item) => (
             <Link
@@ -80,7 +123,6 @@ const DashboardLayout = ({ userRole }) => {
             </Link>
           ))}
 
-          {/* 3. CONDITIONAL ADMIN LINK */}
           {userRole === "ADMIN" && (
             <>
               <div
@@ -104,7 +146,6 @@ const DashboardLayout = ({ userRole }) => {
           )}
         </nav>
 
-        {/* log out button */}
         <div style={{ marginTop: "auto", padding: "0 15px 20px 15px" }}>
           <button
             onClick={handleLogout}
@@ -127,7 +168,7 @@ const DashboardLayout = ({ userRole }) => {
 
       {/* MAIN CONTENT WRAPPER */}
       <div className="main-wrapper">
-        {/* header */}
+        {/* HEADER */}
         <header className="top-header">
           <div className="header-title">
             <h2>{getCurrentTitle()}</h2>
@@ -139,7 +180,8 @@ const DashboardLayout = ({ userRole }) => {
 
           <div className="header-right">
             <div className="user-info">
-              <span>Hi, Staff</span>
+              <span>Hi, {userName}</span>
+
               {userRole === "ADMIN" && (
                 <span
                   style={{
@@ -162,6 +204,8 @@ const DashboardLayout = ({ userRole }) => {
             </button>
           </div>
         </header>
+
+        {/* PAGE CONTENT */}
         <main className="page-content">
           <Outlet />
         </main>
