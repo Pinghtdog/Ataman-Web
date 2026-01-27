@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { X } from "lucide-react";
+import { X } from "lucide-react"; // Kept your existing imports
 import "./Overview.css";
 
 const Overview = () => {
   const [beds, setBeds] = useState([]);
+  const [referrals, setReferrals] = useState([]); // <--- NEW STATE
   const [selectedBed, setSelectedBed] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Stats State
+  // Stats State (Removed static 'referrals')
   const [stats, setStats] = useState({
     erOccupancy: 0,
     erTotal: 0,
@@ -16,15 +17,14 @@ const Overview = () => {
     wardOccupancy: 0,
     wardTotal: 0,
     wardOccupied: 0,
-    referrals: 4, // Static for now
   });
 
-  // Fetch Beds
+  // 1. Fetch Beds
   const fetchBeds = async () => {
     const { data, error } = await supabase
       .from("beds")
       .select(
-        `*, users ( first_name, last_name, medical_conditions, birth_date, gender, blood_type )`,
+        `*, users ( first_name, last_name, medical_conditions, birth_date, gender, blood_type )`
       )
       .order("id", { ascending: true });
 
@@ -33,6 +33,23 @@ const Overview = () => {
       calculateStats(data || []);
     }
     setLoading(false);
+  };
+
+  // 2. Fetch Referrals (NEW FUNCTION)
+  const fetchReferrals = async () => {
+    const { data, error } = await supabase
+      .from("referrals")
+      .select(`
+        id, status, diagnosis_impression, ai_priority_score, created_at,
+        users!patient_id ( first_name, last_name )
+      `)
+      .eq("status", "PENDING") // Only pending items
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (!error) {
+      setReferrals(data || []);
+    }
   };
 
   const calculateAge = (birthDateString) => {
@@ -73,15 +90,32 @@ const Overview = () => {
 
   useEffect(() => {
     fetchBeds();
-    const channel = supabase
-      .channel("overview")
+    fetchReferrals(); // <--- Initial Fetch
+
+    // Real-time Subscription for BEDS
+    const bedChannel = supabase
+      .channel("overview-beds")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "beds" },
-        fetchBeds,
+        fetchBeds
       )
       .subscribe();
-    return () => supabase.removeChannel(channel);
+
+    // Real-time Subscription for REFERRALS (NEW)
+    const referralChannel = supabase
+      .channel("overview-referrals")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "referrals" },
+        fetchReferrals
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(bedChannel);
+      supabase.removeChannel(referralChannel);
+    };
   }, []);
 
   // helpers
@@ -109,8 +143,8 @@ const Overview = () => {
             stats.erOccupancy >= 80
               ? "critical"
               : stats.erOccupancy >= 50
-                ? "warning"
-                : "stable"
+              ? "warning"
+              : "stable"
           }`}
         >
           {/* er occupancy */}
@@ -129,8 +163,8 @@ const Overview = () => {
             stats.wardOccupancy >= 80
               ? "critical"
               : stats.wardOccupancy >= 50
-                ? "warning"
-                : "stable"
+              ? "warning"
+              : "stable"
           }`}
         >
           <h3>General Ward</h3>
@@ -140,11 +174,16 @@ const Overview = () => {
           </div>
         </div>
 
-        {/* REFERRALS static*/}
-        <div className="kpi-card warning">
+        {/* REFERRALS (NOW DYNAMIC) */}
+        <div
+          className={`kpi-card ${referrals.length > 0 ? "warning" : "stable"}`}
+        >
           <h3>Pending Incoming Referrals</h3>
-          <div className="kpi-value">{stats.referrals}</div>
-          <div className="kpi-status">Action required</div>
+          {/* Use the length of the fetched referrals array */}
+          <div className="kpi-value">{referrals.length}</div>
+          <div className="kpi-status">
+            {referrals.length > 0 ? "Action required" : "No pending requests"}
+          </div>
         </div>
       </div>
 
@@ -229,7 +268,7 @@ const Overview = () => {
           </div>
         </div>
 
-        {/*referrals static*/}
+        {/* referrals list (NOW DYNAMIC) */}
         <div className="section-container">
           <div className="section-header">
             <div>
@@ -239,10 +278,74 @@ const Overview = () => {
               </small>
             </div>
           </div>
+
           <div className="referral-list">
-            <div style={{ padding: "20px", color: "#999" }}>
-              No new referrals
-            </div>
+            {referrals.length === 0 ? (
+              <div style={{ padding: "20px", color: "#999" }}>
+                No new referrals
+              </div>
+            ) : (
+              referrals.map((ref) => (
+                <div
+                  key={ref.id}
+                  className="referral-card"
+                  style={{
+                    marginBottom: "10px",
+                    padding: "12px",
+                    background: "#F9FAFB",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
+                >
+                  {/* Priority Indicator */}
+                  <div
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      backgroundColor:
+                        ref.ai_priority_score >= 0.8 ? "#DC2626" : "#10B981",
+                    }}
+                  ></div>
+
+                  <div style={{ flex: 1 }}>
+                    <span
+                      className="patient-name"
+                      style={{
+                        fontSize: "0.9rem",
+                        fontWeight: "bold",
+                        display: "block",
+                      }}
+                    >
+                      {ref.users?.first_name} {ref.users?.last_name}
+                    </span>
+                    <span
+                      className="referral-info"
+                      style={{ fontSize: "0.75rem", color: "#6B7280" }}
+                    >
+                      {ref.diagnosis_impression || "No initial diagnosis"}
+                    </span>
+                  </div>
+
+                  {/* Simple Status Badge */}
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                      background: "#FEF3C7",
+                      color: "#D97706",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    PENDING
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -267,9 +370,17 @@ const Overview = () => {
                 className={`status-badge ${selectedBed.status}`}
                 style={{
                   backgroundColor:
-                    selectedBed.status === "occupied" ? "#FEE2E2" : "#E0F2F1",
+                    selectedBed.status === "occupied"
+                      ? "#FEE2E2"
+                      : selectedBed.status === "cleaning"
+                      ? "#FEF3C7"
+                      : "#E0F2F1",
                   color:
-                    selectedBed.status === "occupied" ? "#B91C1C" : "#00695C",
+                    selectedBed.status === "occupied"
+                      ? "#B91C1C"
+                      : selectedBed.status === "cleaning"
+                      ? "#D97706"
+                      : "#00695C",
                   width: "fit-content",
                 }}
               >

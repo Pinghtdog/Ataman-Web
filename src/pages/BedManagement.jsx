@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { User, AlertTriangle, BedDouble, Search, X } from "lucide-react";
+import { User, Search, X, AlertTriangle } from "lucide-react";
+
+// DEFINE THE ORDER AND DISPLAY NAMES FOR WARDS
+const WARD_ORDER = [
+  { type: 'ER', label: 'Emergency Room (ER)' },
+  { type: 'ICU', label: 'Intensive Care Unit (ICU)' },
+  { type: 'General', label: 'General Ward' },
+  { type: 'Pediatric', label: 'Pediatric Ward' },
+  { type: 'Isolation', label: 'Isolation Ward' },
+];
 
 const BedManagement = () => {
   const [beds, setBeds] = useState([]);
@@ -12,12 +21,12 @@ const BedManagement = () => {
   const [chosenPatient, setChosenPatient] = useState(null);
   const [showDischargeConfirm, setShowDischargeConfirm] = useState(false);
 
-  // 1. FETCH DATA (Real-time)
+  // 1. FETCH DATA
   const fetchBeds = async () => {
     const { data, error } = await supabase
       .from("beds")
       .select(`*, users ( id, first_name, last_name, birth_date )`)
-      .order("id", { ascending: true });
+      .order("bed_label", { ascending: true }); // Sort by label (A-Z)
 
     if (error) console.error("Error fetching beds:", error);
     else setBeds(data || []);
@@ -38,7 +47,7 @@ const BedManagement = () => {
     };
   }, []);
 
-  // 2. AUTO-SUGGEST LOGIC
+  // 2. AUTO-SUGGEST
   useEffect(() => {
     const fetchSuggestions = async () => {
       if (searchTerm.length < 2 || chosenPatient) {
@@ -113,193 +122,125 @@ const BedManagement = () => {
     cleaning: beds.filter((b) => b.status === "cleaning").length,
   };
 
-  const erBeds = beds.filter((b) => b.ward_type === "ER");
-  const wardBeds = beds.filter((b) => b.ward_type === "General");
-
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
-      <h2 className="text-3xl font-extrabold text-gray-800 tracking-tight mb-6 flex items-center gap-3">
-        Bed Management
-      </h2>
+    <div className="p-8 bg-white min-h-screen font-sans">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Bed Management</h2>
 
       {/* STATS ROW */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-        <StatCard label="Total Beds" value={stats.total} />
-        <StatCard
-          label="Occupied"
-          value={stats.occupied}
-          color="text-red-600"
-        />
-        <StatCard
-          label="Available"
-          value={stats.available}
-          color="text-[#00695C]"
-        />
-        <StatCard
-          label="To Be Cleaned"
-          value={stats.cleaning}
-          color="text-amber-500"
-        />
+         <div className="p-4">
+            <p className="text-gray-500 text-sm font-semibold">Total Beds</p>
+            <p className="text-3xl font-bold text-gray-800">{stats.total}</p>
+         </div>
+         <div className="p-4">
+            <p className="text-gray-500 text-sm font-semibold">Occupied</p>
+            <p className="text-3xl font-bold text-red-600">{stats.occupied}</p>
+         </div>
+         <div className="p-4">
+            <p className="text-gray-500 text-sm font-semibold">Available</p>
+            <p className="text-3xl font-bold text-green-600">{stats.available}</p>
+         </div>
+         <div className="p-4">
+            <p className="text-gray-500 text-sm font-semibold">To Be Cleaned</p>
+            <p className="text-3xl font-bold text-amber-500">{stats.cleaning}</p>
+         </div>
       </div>
 
-      {/* EMERGENCY ROOM SECTION */}
-      <div className="mb-10">
-        <div className="flex items-center justify-between mb-6 border-b border-gray-200 pb-3">
-          <h3 className="text-lg font-bold text-gray-700">
-            Emergency Room (ER)
-          </h3>
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            {erBeds.length} Units
-          </span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-          {erBeds.map((bed) => (
-            <BedCard
-              key={bed.id}
-              bed={bed}
-              onDischarge={openDischargeModal}
-              onReady={handleMarkReady}
-              onAssign={setSelectedBed}
-            />
-          ))}
-        </div>
-      </div>
+      {/* --- DYNAMIC WARD SECTIONS --- */}
+      {WARD_ORDER.map((ward) => {
+        // Filter beds for this specific ward type
+        const bedsInWard = beds.filter(b => b.ward_type === ward.type);
 
-      {/* GENERAL WARD SECTION */}
-      <div className="mb-10">
-        <div className="flex items-center justify-between mb-6 border-b border-gray-200 pb-3">
-          <h3 className="text-lg font-bold text-gray-700">General Ward</h3>
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            {wardBeds.length} Units
-          </span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-          {wardBeds.map((bed) => (
-            <BedCard
-              key={bed.id}
-              bed={bed}
-              onDischarge={openDischargeModal}
-              onReady={handleMarkReady}
-              onAssign={setSelectedBed}
-            />
-          ))}
-        </div>
-      </div>
+        // If no beds exist for this ward type, don't render the section
+        if (bedsInWard.length === 0) return null;
 
-      {/* MODAL: ASSIGN PATIENT */}
+        return (
+          <div key={ward.type} className="mb-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex items-center justify-between mb-6 border-b border-gray-200 pb-3">
+              <h3 className="text-xl font-bold text-gray-800">{ward.label}</h3>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                {bedsInWard.length} Units
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+              {bedsInWard.map((bed) => (
+                <BedCard
+                  key={bed.id}
+                  bed={bed}
+                  onDischarge={openDischargeModal}
+                  onReady={handleMarkReady}
+                  onAssign={setSelectedBed}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* IF NO BEDS AT ALL */}
+      {beds.length === 0 && (
+        <div className="text-center py-20 text-gray-400">
+          <p>No beds found for this facility.</p>
+          <p className="text-sm">Go to Admin Dashboard to add beds.</p>
+        </div>
+      )}
+
+      {/* --- MODALS (Unchanged) --- */}
+      
+      {/* 1. ASSIGN MODAL */}
       {selectedBed && !showDischargeConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in duration-200">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-gray-800 tracking-tight">
-                  Assign to {selectedBed.bed_label}
-                </h3>
-                <button
-                  onClick={() => setSelectedBed(null)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X size={20} />
-                </button>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-bold">Assign to {selectedBed.bed_label}</h3>
+              <button onClick={() => setSelectedBed(null)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            
+            <div className="relative mb-6">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 text-gray-400" size={18} />
+                <input
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  placeholder="Search patient name..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setChosenPatient(null); }}
+                  autoFocus
+                />
               </div>
+              {suggestions.length > 0 && (
+                <ul className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+                  {suggestions.map((user) => (
+                    <li key={user.id} onClick={() => handleSelectPatient(user)} className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-0">
+                      {user.first_name} {user.last_name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
-              <div className="relative mb-8">
-                <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block tracking-widest">
-                  Search Patient
-                </label>
-                <div className="relative">
-                  <Search
-                    className="absolute left-3 top-3.5 text-gray-400"
-                    size={16}
-                  />
-                  <input
-                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#00695C] focus:bg-white transition-all text-sm"
-                    placeholder="Enter patient name..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setChosenPatient(null);
-                    }}
-                    autoFocus
-                  />
-                </div>
-
-                {/* SUGGESTIONS LIST - High Z-Index to prevent clipping */}
-                {suggestions.length > 0 && (
-                  <ul className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-100 rounded-xl shadow-2xl z-[100] overflow-hidden">
-                    {suggestions.map((user) => (
-                      <li
-                        key={user.id}
-                        onClick={() => handleSelectPatient(user)}
-                        className="p-4 hover:bg-teal-50 cursor-pointer flex items-center gap-3 border-b last:border-0 border-gray-50"
-                      >
-                        <div className="bg-teal-100 p-2 rounded-full text-teal-600 shrink-0">
-                          <User size={14} />
-                        </div>
-                        <span className="font-bold text-gray-700 text-sm">
-                          {user.first_name} {user.last_name}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setSelectedBed(null)}
-                  className="flex-1 py-3 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors uppercase tracking-wider"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={executeAssignment}
-                  disabled={!chosenPatient}
-                  className="flex-1 py-3 bg-[#00695C] text-white text-sm font-bold rounded-xl shadow-lg shadow-teal-900/20 hover:bg-[#004D40] disabled:opacity-50 transition-all uppercase tracking-wider"
-                >
-                  Confirm
-                </button>
-              </div>
+            <div className="flex gap-3">
+              <button onClick={() => setSelectedBed(null)} className="flex-1 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Cancel</button>
+              <button onClick={executeAssignment} disabled={!chosenPatient} className="flex-1 py-2 bg-teal-700 text-white font-bold rounded-lg disabled:opacity-50">Confirm</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL: DISCHARGE CONFIRM */}
+      {/* 2. DISCHARGE MODAL */}
       {showDischargeConfirm && selectedBed && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center animate-in fade-in zoom-in duration-200">
-            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle size={32} />
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 text-center">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle size={24} />
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">
-              Confirm Discharge
-            </h3>
-            <p className="text-gray-500 mb-8 text-sm leading-relaxed">
-              Are you sure you want to discharge{" "}
-              <span className="font-bold text-gray-800">
-                {selectedBed.users?.first_name} {selectedBed.users?.last_name}
-              </span>
-              ?
-              <br />
-              This bed will be moved to cleaning.
+            <h3 className="text-lg font-bold mb-2">Confirm Discharge</h3>
+            <p className="text-gray-600 mb-6 text-sm">
+              Discharge <strong>{selectedBed.users?.first_name} {selectedBed.users?.last_name}</strong>?
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowDischargeConfirm(false);
-                  setSelectedBed(null);
-                }}
-                className="flex-1 py-3 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors uppercase"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={executeDischarge}
-                className="flex-1 py-3 bg-red-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-red-900/20 hover:bg-red-700 transition-all uppercase"
-              >
-                Discharge
-              </button>
+              <button onClick={() => { setShowDischargeConfirm(false); setSelectedBed(null); }} className="flex-1 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Cancel</button>
+              <button onClick={executeDischarge} className="flex-1 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">Discharge</button>
             </div>
           </div>
         </div>
@@ -308,86 +249,77 @@ const BedManagement = () => {
   );
 };
 
-// HELPER COMPONENTS
-const StatCard = ({ label, value, color = "text-gray-900" }) => (
-  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
-      {label}
-    </p>
-    <p className={`text-3xl font-black ${color}`}>{value}</p>
-  </div>
-);
-
+// --- COMPACT CARD COMPONENT ---
 const BedCard = ({ bed, onDischarge, onReady, onAssign }) => {
-  const statusConfig = {
-    occupied: { header: "bg-red-700", label: "Occupied" },
-    cleaning: { header: "bg-amber-500", label: "Cleaning" },
-    available: { header: "bg-[#004D40]", label: "Vacant" },
-  };
-
-  const config = statusConfig[bed.status] || statusConfig.available;
+  const config = {
+    occupied: {
+      borderColor: "border-[#D32F2F]",
+      headerBg: "bg-[#D32F2F]",
+      iconBg: "bg-red-100",
+      iconColor: "text-[#D32F2F]",
+      btnBg: "bg-gray-100",
+      btnText: "text-gray-600",
+      btnHover: "hover:bg-gray-200",
+      btnLabel: "Discharge",
+      action: () => onDischarge(bed)
+    },
+    cleaning: {
+      borderColor: "border-[#FFA000]",
+      headerBg: "bg-[#FFA000]",
+      iconBg: "bg-transparent",
+      iconColor: "text-[#FFA000]",
+      btnBg: "bg-[#FFF3E0]",
+      btnText: "text-[#E65100]",
+      btnHover: "hover:bg-[#FFE0B2]",
+      btnLabel: "Mark Ready",
+      action: () => onReady(bed.id)
+    },
+    available: {
+      borderColor: "border-[#4CAF50]",
+      headerBg: "bg-[#4CAF50]",
+      iconBg: "bg-transparent",
+      iconColor: "text-[#4CAF50]",
+      btnBg: "bg-[#E8F5E9]",
+      btnText: "text-[#2E7D32]",
+      btnHover: "hover:bg-[#C8E6C9]",
+      btnLabel: "Assign",
+      action: () => onAssign(bed)
+    }
+  }[bed.status] || {};
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100 flex flex-col h-full group transition-all hover:shadow-xl">
-      {/* Header - Fixed Height */}
-      <div
-        className={`${config.header} h-10 flex items-center justify-center text-white font-black text-[10px] uppercase tracking-widest`}
-      >
-        {bed.bed_label}
+    <div className={`rounded-2xl border-[3px] overflow-hidden flex flex-col h-32 bg-white shadow-sm transition-transform hover:-translate-y-1 ${config.borderColor}`}>
+      {/* HEADER */}
+      <div className={`${config.headerBg} h-9 shrink 0 flex items-center px-3`}>
+        <span className="text-white font-bold text-xs tracking-wide uppercase truncate">
+          {bed.bed_label}
+        </span>
       </div>
 
-      {/* Body - Reduced min-h and uses flex-grow to push button down */}
-      <div className="p-4 flex flex-col items-center flex-grow min-h-[150px]">
-        {/* Content Section */}
-        <div className="flex flex-col items-center justify-center flex-grow text-center w-full">
+      {/* BODY */}
+      <div className="p-3 flex flex-col items-center justify-between flex-grow">
+        <div className="flex flex-col items-center justify-center flex-grow w-full">
           {bed.status === "occupied" ? (
             <>
-              <div className="bg-red-50 p-2 rounded-full text-red-600 mb-2">
-                <User size={20} />
-              </div>
-              <p className="font-black text-gray-800 leading-tight text-sm line-clamp-2 px-1">
+              <p className="font-bold text-red-600 text-center text-sm leading-tight line-clamp-2">
                 {bed.users?.first_name} {bed.users?.last_name}
               </p>
-              <p className="text-[9px] font-bold text-gray-400 uppercase mt-1 tracking-tighter">
-                Patient Assigned
-              </p>
             </>
-          ) : bed.status === "cleaning" ? (
-            <p className="font-black text-amber-500 text-[10px] tracking-[0.2em] uppercase italic animate-pulse">
-              Sanitizing...
-            </p>
           ) : (
-            <p className="font-black text-gray-200 text-[10px] tracking-[0.2em] uppercase">
-              Available
-            </p>
+             <div className="flex flex-col items-center">
+               <h3 className={`text-lg font-bold ${config.iconColor} tracking-wide uppercase`}>
+                 {bed.status === "cleaning" ? "CLEANING" : "VACANT"}
+               </h3>
+             </div>
           )}
         </div>
 
-        {/* Action Button Section - Locked to Bottom */}
-        <div className="mt-auto w-full pt-4">
-          {bed.status === "occupied" ? (
-            <button
-              onClick={() => onDischarge(bed)}
-              className="w-full py-2 bg-white border-2 border-red-50 text-red-600 font-bold rounded-lg text-[9px] hover:bg-red-600 hover:text-white transition-all shadow-sm"
-            >
-              DISCHARGE
-            </button>
-          ) : bed.status === "cleaning" ? (
-            <button
-              onClick={() => onReady(bed.id)}
-              className="w-full py-2 bg-amber-500 text-white font-bold rounded-lg text-[9px] hover:bg-amber-600 shadow-md shadow-amber-200 transition-all"
-            >
-              MARK READY
-            </button>
-          ) : (
-            <button
-              onClick={() => onAssign(bed)}
-              className="w-full py-2 bg-[#004D40] text-white font-bold rounded-lg text-[9px] hover:bg-[#005a4b] shadow-lg shadow-teal-900/10 transition-all"
-            >
-              ASSIGN PATIENT
-            </button>
-          )}
-        </div>
+        <button
+          onClick={config.action}
+          className={`w-full py-1.5 mt-2 rounded-lg font-bold text-xs transition-colors ${config.btnBg} ${config.btnText} ${config.btnHover}`}
+        >
+          {config.btnLabel}
+        </button>
       </div>
     </div>
   );
