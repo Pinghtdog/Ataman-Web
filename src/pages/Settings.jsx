@@ -98,7 +98,6 @@ const Settings = () => {
 
   useEffect(() => {
     fetchOverallOccupancy();
-    // Optional: Subscribe to changes so it updates in real-time
     const channel = supabase
       .channel("settings-live")
       .on(

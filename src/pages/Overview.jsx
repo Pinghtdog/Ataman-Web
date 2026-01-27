@@ -171,7 +171,7 @@ const Overview = () => {
 
         {/* Incoming Referrals Card */}
         <div className="bg-white p-6 rounded-[1rem] shadow-sm border border-gray-100 flex flex-col justify-between h-32 relative overflow-hidden">
-          <div className="absolute left-0 top-0 bottom-0 w-2 bg-[#FF9800]" />
+          <div className="absolute left-0 top-0 bottom-0 w-2 bg-yellow-400" />
           <div>
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1 pl-1">
               Incoming Referrals
@@ -180,7 +180,7 @@ const Overview = () => {
               {referrals.length}
             </div>
           </div>
-          <p className="text-[10px] font-bold text-[#FF9800] pl-1 uppercase tracking-tight">
+          <p className="text-[10px] font-bold text-yellow-400 pl-1 uppercase tracking-tight">
             Action Required
           </p>
         </div>

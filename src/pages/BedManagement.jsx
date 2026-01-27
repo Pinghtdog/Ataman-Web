@@ -8,14 +8,15 @@ import {
   BedDouble,
   Loader2,
   Clock,
+  Filter,
+  ChevronDown,
 } from "lucide-react";
 
 const BedManagement = () => {
   const [beds, setBeds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [facilityId, setFacilityId] = useState(null);
-
-  // MODAL & SEARCH STATES
+  const [filterType, setFilterType] = useState("All");
   const [selectedBed, setSelectedBed] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -119,8 +120,15 @@ const BedManagement = () => {
   };
 
   // STATS & GROUPING
+  const allWardTypesInDB = [
+    ...new Set(beds.map((b) => b.ward_type || "General")),
+  ];
+
   const wardGroups = beds.reduce((acc, bed) => {
     const type = bed.ward_type || "General";
+
+    if (filterType !== "All" && type !== filterType) return acc;
+
     if (!acc[type]) acc[type] = [];
     acc[type].push(bed);
     return acc;
@@ -152,7 +160,7 @@ const BedManagement = () => {
       </div>
 
       {/* KPI STATS ROW */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-4">
         <StatCard label="Total Units" value={stats.total} />
         <StatCard
           label="Occupied"
@@ -171,35 +179,68 @@ const BedManagement = () => {
         />
       </div>
 
-      {/* DYNAMIC WARD SECTIONS */}
-      {Object.keys(wardGroups).map((wardType) => (
-        <div key={wardType} className="mb-12">
-          <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-2 px-2">
-            <h3 className="text-lg font-bold text-gray-700 uppercase tracking-tight">
-              {wardType} Section
-            </h3>
-            <span className="text-[10px] font-semibold text-gray-700 uppercase tracking-widest">
-              {wardGroups[wardType].length} Units
-            </span>
-          </div>
-
-          {/* GRID SET TO 5 COLUMNS FOR LARGER SCREENS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {wardGroups[wardType].map((bed) => (
-              <BedControlCard
-                key={bed.id}
-                bed={bed}
-                onDischarge={() => {
-                  setSelectedBed(bed);
-                  setShowDischargeConfirm(true);
-                }}
-                onReady={() => handleMarkReady(bed.id)}
-                onAssign={() => setSelectedBed(bed)}
-              />
+      {/* dropdown */}
+      <div className="flex items-center gap-3 bg-white p-2 pl-4 rounded-2xl shadow-sm border border-gray-100">
+        <Filter size={14} className="text-gray-400" />
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+          Filter:
+        </span>
+        <div className="relative">
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="bg-transparent outline-none text-sm font-bold text-gray-700 pr-8 cursor-pointer appearance-none"
+          >
+            <option value="All">Show All Sections</option>
+            {allWardTypesInDB.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
             ))}
-          </div>
+          </select>
+          <ChevronDown
+            size={14}
+            className="absolute right-0 top-1 text-gray-400 pointer-events-none"
+          />
         </div>
-      ))}
+      </div>
+
+      {/* DYNAMIC WARD SECTIONS */}
+      {Object.keys(wardGroups).length > 0 ? (
+        Object.keys(wardGroups).map((wardType) => (
+          <div key={wardType} className="mb-12 animate-in fade-in duration-500">
+            <div className="p-6 flex items-center justify-between mb-6 border-b border-gray-100 pb-2 px-2">
+              <h3 className="text-lg font-bold text-gray-700 uppercase tracking-tight">
+                {wardType} Section
+              </h3>
+              <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-widest">
+                {wardGroups[wardType].length} Units
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-8">
+              {wardGroups[wardType].map((bed) => (
+                <BedControlCard
+                  key={bed.id}
+                  bed={bed}
+                  onDischarge={() => {
+                    setSelectedBed(bed);
+                    setShowDischargeConfirm(true);
+                  }}
+                  onReady={() => handleMarkReady(bed.id)}
+                  onAssign={() => setSelectedBed(bed)}
+                />
+              ))}
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="py-20 text-center border-2 border-dashed border-gray-100 rounded-[3rem]">
+          <p className="text-gray-300 font-bold uppercase tracking-widest text-xs">
+            No beds found matching this filter
+          </p>
+        </div>
+      )}
 
       {/* MODALS */}
       {selectedBed && !showDischargeConfirm && (
