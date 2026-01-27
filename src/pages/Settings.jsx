@@ -9,6 +9,7 @@ const Settings = () => {
 
   const [currentFacilityId, setCurrentFacilityId] = useState(null);
   const [currentUserRole, setCurrentUserRole] = useState("");
+  const [overallOccupancy, setOverallOccupancy] = useState(0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState(null);
@@ -42,7 +43,6 @@ const Settings = () => {
 
   const fetchSettingsData = async (facilityId) => {
     try {
-      // 1. Fetch Threshold
       const { data: facilityData } = await supabase
         .from("facilities")
         .select("metadata")
@@ -52,7 +52,6 @@ const Settings = () => {
         setOccupancyThreshold(facilityData.metadata.diversion_threshold);
       }
 
-      // 2. Fetch Staff
       const { data: staffData } = await supabase
         .from("facility_staff")
         .select("id, role, user_id")
@@ -85,6 +84,32 @@ const Settings = () => {
       setLoading(false);
     }
   };
+
+  const fetchOverallOccupancy = async () => {
+    const { data, error } = await supabase.from("beds").select("status");
+
+    if (data && data.length > 0) {
+      const total = data.length;
+      const occupied = data.filter((b) => b.status === "occupied").length;
+      const percentage = Math.round((occupied / total) * 100);
+      setOverallOccupancy(percentage);
+    }
+  };
+
+  useEffect(() => {
+    fetchOverallOccupancy();
+    // Optional: Subscribe to changes so it updates in real-time
+    const channel = supabase
+      .channel("settings-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "beds" },
+        fetchOverallOccupancy,
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
 
   const openEditModal = (staffMember) => {
     setSelectedStaff(staffMember);
@@ -187,59 +212,53 @@ const Settings = () => {
         </table>
       </div>
 
-      {/* SECTION 2: AUTOMATION THRESHOLDS */}
+      {/* SECTION 2: LIVE OPERATIONAL STATUS */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">
-          Automation Thresholds
+        <h3 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-tight">
+          Operational Status
         </h3>
 
         <div className="border border-gray-100 rounded-2xl p-8 bg-gray-50/50">
           <div className="mb-6">
             <label className="block text-gray-700 font-bold text-lg mb-1">
-              Diversion Protocol Trigger
+              Total Facility Occupancy
             </label>
             <p className="text-sm text-gray-400">
-              Automatically suggest BHCs when occupancy exceeds:
+              Real-time combined occupancy across ER and all Wards:
             </p>
           </div>
 
           <div className="flex items-center gap-6">
-            {/* CUSTOM STYLED SLIDER */}
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={occupancyThreshold}
-              onChange={(e) => setOccupancyThreshold(e.target.value)}
-              className="w-full h-2 rounded-lg appearance-none cursor-pointer
-                [&::-webkit-slider-thumb]:appearance-none 
-                [&::-webkit-slider-thumb]:w-6 
-                [&::-webkit-slider-thumb]:h-6 
-                [&::-webkit-slider-thumb]:rounded-full 
-                [&::-webkit-slider-thumb]:bg-red-600
-                [&::-webkit-slider-thumb]:border-4
-                [&::-webkit-slider-thumb]:border-white
-                [&::-webkit-slider-thumb]:shadow-lg
-                transition-all duration-150"
-              style={{
-                background: `linear-gradient(to right, #DC2626 0%, #DC2626 ${occupancyThreshold}%, #E5E7EB ${occupancyThreshold}%, #E5E7EB 100%)`,
-              }}
-            />
+            {/* READ-ONLY PROGRESS BAR */}
+            <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-visible">
+              {/* The Colored Fill */}
+              <div
+                className="absolute top-0 left-0 h-full bg-red-600 rounded-full transition-all duration-700 ease-out"
+                style={{ width: `${overallOccupancy}%` }}
+              >
+                {/* The Indicator Circle (The "Thumb" from Figma) */}
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-6 h-6 bg-red-600 border-4 border-white rounded-full shadow-lg"></div>
+              </div>
+            </div>
 
-            {/* RED PERCENTAGE TEXT */}
-            <span className="text-red-600 font-black text-3xl min-w-[4rem]">
-              {occupancyThreshold}%
-            </span>
+            {/* PERCENTAGE TEXT */}
+            <div className="flex flex-col items-end min-w-[5rem]">
+              <span className="text-red-600 font-black text-4xl leading-none">
+                {overallOccupancy}%
+              </span>
+            </div>
           </div>
 
-          <div className="flex justify-end mt-8">
-            <button
-              onClick={handleSaveThreshold}
-              className="bg-[#00695C] text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-[#004D40] shadow-lg shadow-teal-900/20 transition-all active:scale-95"
-            >
-              <Save size={20} />
-              Save Changes
-            </button>
+          {/* SYSTEM ADVISORY */}
+          <div className="mt-8 flex items-center gap-3 p-4 bg-white rounded-xl border border-gray-100">
+            <div
+              className={`w-3 h-3 rounded-full ${overallOccupancy >= 90 ? "bg-red-600 animate-pulse" : "bg-green-500"}`}
+            ></div>
+            <p className="text-xs font-bold text-gray-600 uppercase tracking-widest">
+              {overallOccupancy >= 90
+                ? "Diversion Protocol Suggested: Capacity Critical"
+                : "Status: Normal Operations"}
+            </p>
           </div>
         </div>
       </div>

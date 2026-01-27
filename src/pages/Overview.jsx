@@ -1,328 +1,331 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { X } from "lucide-react";
-import "./Overview.css";
+import { X, BedDouble, AlertCircle, Loader2 } from "lucide-react";
 
 const Overview = () => {
   const [beds, setBeds] = useState([]);
+  const [referrals, setReferrals] = useState([]);
   const [selectedBed, setSelectedBed] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [facilityId, setFacilityId] = useState(null);
 
-  // Stats State
-  const [stats, setStats] = useState({
-    erOccupancy: 0,
-    erTotal: 0,
-    erOccupied: 0,
-    wardOccupancy: 0,
-    wardTotal: 0,
-    wardOccupied: 0,
-    referrals: 4, // Static for now
-  });
+  const fetchData = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
 
-  // Fetch Beds
-  const fetchBeds = async () => {
-    const { data, error } = await supabase
-      .from("beds")
-      .select(
-        `*, users ( first_name, last_name, medical_conditions, birth_date, gender, blood_type )`,
-      )
-      .order("id", { ascending: true });
+      const { data: staffRecord } = await supabase
+        .from("facility_staff")
+        .select("facility_id")
+        .eq("user_id", user.id)
+        .single();
 
-    if (!error) {
-      setBeds(data || []);
-      calculateStats(data || []);
+      const fId = staffRecord?.facility_id || 2; // Fallback to 2 if not found
+      setFacilityId(fId);
+
+      const { data: bedData } = await supabase
+        .from("beds")
+        .select(
+          `*, users ( first_name, last_name, medical_conditions, birth_date, gender, blood_type )`,
+        )
+        .eq("facility_id", fId)
+        .order("bed_label", { ascending: true });
+
+      const { data: refData } = await supabase
+        .from("referrals")
+        .select(
+          `
+          id, chief_complaint, ai_priority_score, doctor_name, created_at,
+          users!patient_id (first_name, last_name, medical_id),
+          origin:facilities!origin_facility_id (name)
+        `,
+        )
+        // .eq("destination_facility_id", fId) // Only show referrals destined for US
+        .eq("status", "PENDING")
+        .order("created_at", { ascending: false });
+
+      if (bedData) setBeds(bedData);
+      if (refData) setReferrals(refData);
+    } catch (err) {
+      console.error("Fetch error:", err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
-
-  const calculateAge = (birthDateString) => {
-    if (!birthDateString) return "N/A";
-    const today = new Date();
-    const birthDate = new Date(birthDateString);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age;
-  };
-
-  const calculateStats = (data) => {
-    const erBeds = data.filter((b) => b.ward_type === "ER");
-    const genBeds = data.filter((b) => b.ward_type === "General");
-    // er
-    const erTotal = erBeds.length;
-    const erOcc = erBeds.filter((b) => b.status === "occupied").length;
-    const erRate = erTotal > 0 ? Math.round((erOcc / erTotal) * 100) : 0;
-    // ward
-    const wardTotal = genBeds.length;
-    const wardOcc = genBeds.filter((b) => b.status === "occupied").length;
-    const wardRate =
-      wardTotal > 0 ? Math.round((wardOcc / wardTotal) * 100) : 0;
-
-    setStats((prev) => ({
-      ...prev,
-      erOccupancy: erRate,
-      erTotal,
-      erOccupied: erOcc,
-      wardOccupancy: wardRate,
-      wardTotal,
-      wardOccupied: wardOcc,
-    }));
   };
 
   useEffect(() => {
-    fetchBeds();
-    const channel = supabase
-      .channel("overview")
+    fetchData();
+    const bedChan = supabase
+      .channel("beds-live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "beds" },
-        fetchBeds,
+        fetchData,
       )
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    const refChan = supabase
+      .channel("refs-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "referrals" },
+        fetchData,
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(bedChan);
+      supabase.removeChannel(refChan);
+    };
   }, []);
 
-  // helpers
-  const erBeds = beds.filter((b) => b.ward_type === "ER");
-  const gwBeds = beds.filter((b) => b.ward_type === "General");
+  const getWardStats = () => {
+    const wards = {};
+    beds.forEach((bed) => {
+      const type = bed.ward_type || "Uncategorized";
+      if (!wards[type]) wards[type] = { total: 0, occupied: 0 };
+      wards[type].total++;
+      if (bed.status === "occupied") wards[type].occupied++;
+    });
+    return wards;
+  };
+
+  const wardStats = getWardStats();
+  const wardTypes = Object.keys(wardStats);
 
   if (loading)
     return (
-      <div className="p-10 text-gray-400 font-bold animate-pulse text-center">
-        Loading Overview...
+      <div className="flex flex-col items-center justify-center h-screen text-gray-400 gap-4">
+        <Loader2 className="animate-spin" size={40} />
+        <p className="font-black uppercase tracking-widest text-xs">
+          Syncing Command Center...
+        </p>
       </div>
     );
 
   return (
-    <div>
-      {/* STATUS BAR */}
-      <div className="status-bar">
-        <span className="status-pill">Status: Normal Operations</span>
+    <div className="p-8 bg-[#F8FAFC] min-h-screen">
+      {/* STATUS HEADER */}
+      <div className="flex items-center gap-3 mb-8">
+        <span className="bg-emerald-500 text-white px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-100">
+          Status: Normal Operations
+        </span>
       </div>
 
-      {/* KPI CARDS */}
-      <div className="kpi-grid">
-        <div
-          className={`kpi-card ${
-            stats.erOccupancy >= 80
-              ? "critical"
-              : stats.erOccupancy >= 50
-                ? "warning"
-                : "stable"
-          }`}
-        >
-          {/* er occupancy */}
-          <h3>ER Occupancy</h3>
-          <div className="kpi-value">{stats.erOccupancy}%</div>
-          <div className="kpi-status">
-            {stats.erOccupancy >= 90
-              ? `Critical: Only ${stats.erTotal - stats.erOccupied} beds left`
-              : `${stats.erOccupied} occupied / ${stats.erTotal} total`}
-          </div>
-        </div>
+      {/* KPI ROW */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+        {/* Dynamic Occupancy Cards */}
+        {wardTypes.map((type) => {
+          const stats = wardStats[type];
+          const percent = Math.round((stats.occupied / stats.total) * 100);
+          return (
+            <div
+              key={type}
+              className="bg-white p-6 rounded-[2rem] shadow-sm border-l-8 border-emerald-500"
+            >
+              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
+                {type} Occupancy
+              </h3>
+              <div className="text-4xl font-black text-gray-800">
+                {percent}%
+              </div>
+              <p className="text-[9px] font-bold text-gray-400 mt-2 uppercase">
+                {stats.occupied} / {stats.total} Beds
+              </p>
+            </div>
+          );
+        })}
 
-        {/* gen ward occupancy */}
-        <div
-          className={`kpi-card ${
-            stats.wardOccupancy >= 80
-              ? "critical"
-              : stats.wardOccupancy >= 50
-                ? "warning"
-                : "stable"
-          }`}
-        >
-          <h3>General Ward</h3>
-          <div className="kpi-value">{stats.wardOccupancy}%</div>
-          <div className="kpi-status">
-            {stats.wardOccupied} occupied / {stats.wardTotal} total
+        {/* Incoming Referrals Card */}
+        <div className="bg-white p-6 rounded-[2rem] shadow-sm border-l-8 border-orange-400">
+          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
+            Incoming Referrals
+          </h3>
+          <div className="text-4xl font-black text-gray-800">
+            {referrals.length}
           </div>
-        </div>
-
-        {/* REFERRALS static*/}
-        <div className="kpi-card warning">
-          <h3>Pending Incoming Referrals</h3>
-          <div className="kpi-value">{stats.referrals}</div>
-          <div className="kpi-status">Action required</div>
+          <p className="text-[9px] font-bold text-orange-500 mt-2 uppercase">
+            Action Required
+          </p>
         </div>
       </div>
 
-      {/* MAIN CONTENT SPLIT */}
-      <div className="content-split">
-        {/* trackers */}
-        <div className="section-container">
-          <div className="section-header">
-            <h4 className="section-title">Live Bed Tracker</h4>
-            <div className="legend">
-              <span>
-                <div className="dot" style={{ background: "#B71C1C" }}></div>{" "}
-                Occupied
-              </span>
-              <span>
-                <div className="dot" style={{ background: "#F59E0B" }}></div>{" "}
-                Pending
-              </span>
-              <span>
-                <div className="dot" style={{ background: "#004D40" }}></div>{" "}
-                Avail
-              </span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* LIVE BED TRACKER */}
+        <div className="lg:col-span-2 bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100 min-h-[400px]">
+          <div className="flex justify-between items-center mb-10">
+            <h4 className="font-black text-gray-800 uppercase tracking-tight text-lg">
+              Live Asset Tracker
+            </h4>
+            <div className="flex gap-4">
+              <LegendItem color="bg-red-600" label="Occupied" />
+              <LegendItem color="bg-orange-400" label="Cleaning" />
+              <LegendItem color="bg-[#004D40]" label="Avail" />
             </div>
           </div>
 
-          {/*er */}
-          <h5
-            style={{
-              margin: "20px 0 10px 0",
-              color: "#4B5563",
-              borderBottom: "1px solid #eee",
-              paddingBottom: "5px",
-            }}
-          >
-            Emergency Room ({erBeds.length})
-          </h5>
-
-          <div className="bed-grid">
-            {erBeds.map((bed) => (
-              <div
-                key={bed.id}
-                className={`bed-box ${bed.status}`}
-                onClick={() => setSelectedBed(bed)}
-              >
-                {bed.bed_label}
-              </div>
-            ))}
-            {erBeds.length === 0 && (
-              <p style={{ color: "#999", fontSize: "0.9rem" }}>
-                No ER beds found.
+          {beds.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-gray-300">
+              <BedDouble size={48} className="mb-4 opacity-20" />
+              <p className="font-bold text-sm uppercase tracking-widest">
+                No beds registered for Facility #{facilityId}
               </p>
+              <p className="text-xs mt-2">
+                Add beds in the Admin Dashboard to see them here.
+              </p>
+            </div>
+          ) : (
+            wardTypes.map((type) => (
+              <div key={type} className="mb-12 last:mb-0">
+                <h5 className="text-[10px] font-bold text-gray-300 uppercase tracking-[0.3em] mb-6 border-b border-gray-50 pb-2">
+                  {type} Section
+                </h5>
+                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
+                  {beds
+                    .filter((b) => b.ward_type === type)
+                    .map((bed) => (
+                      <div
+                        key={bed.id}
+                        onClick={() => setSelectedBed(bed)}
+                        className={`aspect-square rounded-2xl flex items-center justify-center text-[10px] font-black cursor-pointer transition-all hover:scale-110 shadow-sm text-white
+                        ${bed.status === "occupied" ? "bg-red-600" : bed.status === "cleaning" ? "bg-orange-400" : "bg-[#004D40]"}`}
+                      >
+                        {bed.bed_label}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* REFERRAL STREAM */}
+        <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-gray-100 h-fit">
+          <h4 className="font-black text-gray-800 uppercase tracking-tight mb-8">
+            Referral Stream
+          </h4>
+          <div className="space-y-4">
+            {referrals.length === 0 ? (
+              <p className="py-20 text-center text-gray-300 font-bold text-xs uppercase tracking-widest">
+                Clear for now
+              </p>
+            ) : (
+              referrals.map((ref) => (
+                <div
+                  key={ref.id}
+                  className="p-5 bg-gray-50 rounded-[2rem] border border-gray-100 relative overflow-hidden group hover:border-emerald-500 transition-all"
+                >
+                  <div
+                    className={`absolute left-0 top-0 bottom-0 w-1.5 ${ref.ai_priority_score >= 0.8 ? "bg-red-500" : "bg-[#00695C]"}`}
+                  />
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-xs font-black text-gray-800 uppercase truncate">
+                      {ref.users?.first_name} {ref.users?.last_name}
+                    </span>
+                    <span
+                      className={`text-[8px] font-black px-2 py-0.5 rounded-full ${ref.ai_priority_score >= 0.8 ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600"}`}
+                    >
+                      ESI {ref.ai_priority_score >= 0.8 ? "1" : "4"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase mb-2">
+                    From: {ref.origin?.name}
+                  </p>
+                  <p className="text-[11px] text-gray-500 leading-relaxed italic">
+                    "{ref.chief_complaint}"
+                  </p>
+                </div>
+              ))
             )}
           </div>
-
-          {/* gen ward */}
-          <h5
-            style={{
-              margin: "30px 0 10px 0",
-              color: "#4B5563",
-              borderBottom: "1px solid #eee",
-              paddingBottom: "5px",
-            }}
-          >
-            General Ward ({gwBeds.length})
-          </h5>
-
-          <div className="bed-grid">
-            {gwBeds.map((bed) => (
-              <div
-                key={bed.id}
-                className={`bed-box ${bed.status}`}
-                onClick={() => setSelectedBed(bed)}
-              >
-                {bed.bed_label}
-              </div>
-            ))}
-            {gwBeds.length === 0 && (
-              <p style={{ color: "#999", fontSize: "0.9rem" }}>
-                No Ward beds found.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/*referrals static*/}
-        <div className="section-container">
-          <div className="section-header">
-            <div>
-              <h4 className="section-title">Incoming Referrals</h4>
-              <small style={{ color: "#6B7280" }}>
-                Patients transferred digitally
-              </small>
-            </div>
-          </div>
-          <div className="referral-list">
-            <div style={{ padding: "20px", color: "#999" }}>
-              No new referrals
-            </div>
-          </div>
         </div>
       </div>
 
-      {/*popups */}
+      {/* BED MODAL */}
       {selectedBed && (
-        <div className="modal-overlay" onClick={() => setSelectedBed(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 style={{ margin: 0 }}>Bed: {selectedBed.bed_label}</h2>
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedBed(null)}
+        >
+          <div
+            className="bg-white rounded-[3rem] p-10 w-full max-w-sm shadow-2xl animate-in zoom-in duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-8">
+              <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">
+                Asset {selectedBed.bed_label}
+              </h2>
               <button
-                className="close-btn"
                 onClick={() => setSelectedBed(null)}
+                className="text-gray-300 hover:text-gray-600"
               >
                 <X size={24} />
               </button>
             </div>
 
-            <div className="detail-row">
-              <span className="detail-label">Status</span>
-              <span
-                className={`status-badge ${selectedBed.status}`}
-                style={{
-                  backgroundColor:
-                    selectedBed.status === "occupied" ? "#FEE2E2" : "#E0F2F1",
-                  color:
-                    selectedBed.status === "occupied" ? "#B91C1C" : "#00695C",
-                  width: "fit-content",
-                }}
-              >
-                {selectedBed.status}
-              </span>
+            <div className="space-y-6">
+              <div className="flex justify-between border-b border-gray-50 pb-4">
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  Current Status
+                </span>
+                <span
+                  className={`text-[10px] font-black uppercase ${selectedBed.status === "occupied" ? "text-red-500" : "text-emerald-500"}`}
+                >
+                  {selectedBed.status}
+                </span>
+              </div>
+
+              {selectedBed.status === "occupied" ? (
+                <>
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">
+                      Patient
+                    </label>
+                    <p className="text-lg font-black text-gray-800">
+                      {selectedBed.users?.first_name}{" "}
+                      {selectedBed.users?.last_name}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">
+                      Condition
+                    </label>
+                    <p className="text-sm text-gray-500 leading-relaxed italic font-medium">
+                      "
+                      {selectedBed.users?.medical_conditions ||
+                        "Stable / No conditions listed"}
+                      "
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="py-10 text-center bg-gray-50 rounded-3xl text-gray-400 font-bold text-xs uppercase tracking-widest">
+                  Ready for assignment
+                </div>
+              )}
             </div>
 
-            {selectedBed.users ? (
-              <>
-                <div className="detail-row">
-                  <span className="detail-label">Patient Name</span>
-                  <span className="detail-value">
-                    {selectedBed.users.first_name} {selectedBed.users.last_name}
-                  </span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Diagnosis / Conditions</span>
-                  <span className="detail-value">
-                    {selectedBed.users.medical_conditions || "None listed"}
-                  </span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Details</span>
-                  <span className="detail-value">
-                    {[
-                      `${calculateAge(selectedBed.users.birth_date)} yrs old`,
-                      selectedBed.users.gender,
-                      selectedBed.users.blood_type,
-                    ]
-                      .filter(Boolean)
-                      .join(" • ")}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <p style={{ color: "#6B7280", padding: "20px 0" }}>
-                This bed is currently empty.
-              </p>
-            )}
-
-            <div className="modal-footer">
-              <button
-                className="btn-secondary"
-                onClick={() => setSelectedBed(null)}
-              >
-                Close
-              </button>
-            </div>
+            <button
+              onClick={() => setSelectedBed(null)}
+              className="w-full mt-10 py-4 bg-gray-900 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-black transition-all shadow-lg shadow-gray-200"
+            >
+              Close Console
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 };
+
+const LegendItem = ({ color, label }) => (
+  <div className="flex items-center gap-2">
+    <div className={`w-3 h-3 rounded-md ${color}`} />
+    <span className="text-[10px] font-black text-gray-300 uppercase tracking-tight">
+      {label}
+    </span>
+  </div>
+);
 
 export default Overview;

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Search, FileText, Pill, User } from "lucide-react";
+import { Search, FileText, Pill, User, Activity } from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 const Charting = () => {
@@ -7,195 +7,118 @@ const Charting = () => {
   const [patient, setPatient] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [searchError, setSearchError] = useState("");
 
   const handleSearch = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setSearchError("");
-    setPatient(null);
-    setHistory([]);
+    const { data } = await supabase
+      .from("users")
+      .select("*")
+      .or(`last_name.ilike.%${searchTerm}%,philhealth_id.eq.${searchTerm}`)
+      .limit(1)
+      .single();
 
-    try {
-      const { data, error } = await supabase
-        .from("users")
+    if (data) {
+      setPatient(data);
+      const { data: notes } = await supabase
+        .from("clinical_notes")
         .select("*")
-        .or(`last_name.ilike.%${searchTerm}%,philhealth_id.eq.${searchTerm}`)
-        .limit(1)
-        .single();
-
-      if (error) throw error;
-
-      if (data) {
-        setPatient(data);
-        fetchHistory(data.id);
-      }
-    } catch (err) {
-      console.error(err);
-      setSearchError(
-        "Patient not found. Try entering a Last Name or PhilHealth ID.",
-      );
-    } finally {
-      setLoading(false);
+        .eq("patient_id", data.id);
+      setHistory(notes || []);
     }
+    setLoading(false);
   };
-
-  const fetchHistory = async (patientId) => {
-    const { data: notes } = await supabase
-      .from("clinical_notes")
-      .select("id, created_at, assessment, doctor_id")
-      .eq("patient_id", patientId);
-
-    const { data: meds } = await supabase
-      .from("prescriptions")
-      .select("id, created_at, medication_name, dosage")
-      .eq("user_id", patientId);
-
-    const combined = [
-      ...(notes?.map((n) => ({
-        ...n,
-        type: "Note",
-        title: "Consultation",
-        desc: n.assessment,
-      })) || []),
-      ...(meds?.map((m) => ({
-        ...m,
-        type: "Rx",
-        title: "Prescription",
-        desc: `${m.medication_name} - ${m.dosage}`,
-      })) || []),
-    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-    setHistory(combined);
-  };
-
-  const getAge = (dob) => {
-    if (!dob) return "N/A";
-    const ageDifMs = Date.now() - new Date(dob).getTime();
-    const ageDate = new Date(ageDifMs);
-    return Math.abs(ageDate.getUTCFullYear() - 1970);
-  };
-
-  if (loading)
-    return (
-      <div className="p-10 text-gray-400 font-bold animate-pulse text-center">
-        Charting Digital Data...
-      </div>
-    );
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
-      <h2 className="text-3xl font-extrabold text-gray-800 tracking-tight mb-6">
-        Patient Records
-      </h2>
+    <div className="p-10 bg-[#F8FAFC] min-h-screen">
+      <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
+        Digital Charting
+      </h1>
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[0.2em] mb-10">
+        Central Health Records
+      </p>
 
-      {/* SEARCH BAR */}
-      <form onSubmit={handleSearch} className="flex gap-2 mb-8 max-w-3xl">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            className="w-full p-3 pl-4 border border-gray-300 rounded-l shadow-sm focus:outline-none focus:border-[#00695C]"
-            placeholder="Search by PhilHealth ID or Last Name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      {/* SEARCH BAR - Command Center Style */}
+      <form
+        onSubmit={handleSearch}
+        className="mb-10 flex bg-white p-2 rounded-3xl shadow-sm border border-gray-100 items-center max-w-2xl"
+      >
+        <div className="pl-4 text-gray-400">
+          <Search size={20} />
         </div>
-        <button
-          type="submit"
-          className="bg-[#374151] text-white px-6 py-3 rounded-r font-medium hover:bg-gray-800 disabled:opacity-50"
-        >
-          {loading ? "Searching..." : "Search"}
+        <input
+          type="text"
+          placeholder="Search by PhilHealth ID or Name..."
+          className="w-full outline-none px-4 text-sm font-bold text-gray-600 h-12 bg-transparent"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+        <button className="bg-gray-800 text-white px-8 h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all">
+          Search
         </button>
       </form>
 
-      {searchError && (
-        <div className="p-4 mb-6 bg-red-100 text-red-700 rounded border border-red-200">
-          {searchError}
-        </div>
-      )}
-
-      {/* PATIENT PROFILE CARD */}
       {patient && (
-        <div className="bg-white rounded-lg shadow p-6 mb-8 border border-gray-200 animate-fade-in">
-          <div className="flex justify-between items-start">
-            <div className="flex gap-4">
-              <div className="w-16 h-16 bg-[#E0F2F1] rounded-full flex items-center justify-center text-[#00695C] font-bold text-xl">
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* PATIENT HEADER CARD */}
+          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden">
+            <div className="absolute left-0 top-0 bottom-0 w-2 bg-[#00695C]" />
+            <div className="flex items-center gap-8">
+              <div className="w-20 h-20 bg-gray-50 rounded-[2rem] flex items-center justify-center border border-gray-100 text-[#00695C]">
                 <User size={32} />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-900">
+                <h2 className="text-2xl font-extrabold text-gray-800">
                   {patient.first_name} {patient.last_name}
-                </h3>
-                <p className="text-gray-500 text-sm">
-                  {patient.gender} • {getAge(patient.birth_date)} Years Old •{" "}
-                  {patient.blood_type || "Unknown Type"}
-                </p>
-                <p className="text-gray-500 text-sm">
-                  {patient.barangay || "No Address"}
-                </p>
-                <p className="text-red-500 text-sm mt-1">
-                  Allergies: {patient.allergies || "None"}
-                </p>
+                </h2>
+                <div className="flex gap-4 mt-2">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    {patient.gender} • {patient.blood_type || "O+"}
+                  </span>
+                  <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">
+                    Allergies: {patient.allergies || "None"}
+                  </span>
+                </div>
               </div>
             </div>
-            <div className="flex flex-col gap-2 items-end">
-              {patient.philhealth_id && (
-                <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded">
-                  PHILHEALTH: {patient.philhealth_id}
-                </span>
-              )}
-              <span className="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded">
-                VERIFIED RESIDENT
+            <div className="text-right space-y-2">
+              <span className="block bg-emerald-50 text-emerald-600 px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-emerald-100">
+                Verified Indigent
+              </span>
+              <span className="block bg-blue-50 text-blue-600 px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-blue-100">
+                PhilHealth Active
               </span>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* HISTORY TABLE */}
-      {patient && (
-        <div>
-          <h3 className="font-bold text-gray-800 mb-4">
-            Ataman Interaction History
-          </h3>
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            {history.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                No medical history found for this patient.
-              </div>
-            ) : (
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#374151] text-white text-xs uppercase tracking-wider">
-                    <th className="p-4">Date</th>
-                    <th className="p-4">Type</th>
-                    <th className="p-4">Details</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {history.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-gray-50">
-                      <td className="p-4 text-gray-600 text-sm">
-                        {new Date(row.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="p-4 font-bold text-sm">
-                        <span
-                          className={`flex items-center gap-2 ${row.type === "Rx" ? "text-purple-600" : "text-[#00695C]"}`}
-                        >
-                          {row.type === "Rx" ? (
-                            <Pill size={16} />
-                          ) : (
-                            <FileText size={16} />
-                          )}
-                          {row.title}
-                        </span>
-                      </td>
-                      <td className="p-4 text-gray-600 text-sm">{row.desc}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          {/* INTERACTION HISTORY */}
+          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-8 border-b border-gray-50 pb-4 text-center">
+              Ataman Interaction History
+            </h3>
+            <div className="space-y-4">
+              {history.map((note) => (
+                <div
+                  key={note.id}
+                  className="grid grid-cols-12 items-center p-6 bg-gray-50/50 rounded-[2rem] border border-gray-50 hover:border-primary transition-all"
+                >
+                  <div className="col-span-2 text-[10px] font-black text-gray-400 uppercase">
+                    {new Date(note.created_at).toLocaleDateString()}
+                  </div>
+                  <div className="col-span-3 flex items-center gap-2">
+                    <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg">
+                      <Activity size={14} />
+                    </div>
+                    <span className="text-xs font-black uppercase text-emerald-600">
+                      Consultation
+                    </span>
+                  </div>
+                  <div className="col-span-7 text-xs font-bold text-gray-600 leading-relaxed italic">
+                    "{note.subjective_notes}"
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
