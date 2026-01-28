@@ -110,7 +110,7 @@ const Overview = () => {
     );
 
   return (
-    <div className="p-8 bg-[#F8FAFC] min-h-screen ">
+    <div className="p-8 bg-[#F8FAFC] min-h-screen font-sans">
       {/* GLOWING DYNAMIC STATUS */}
       <div className="mb-8">
         <span
@@ -121,7 +121,7 @@ const Overview = () => {
       </div>
 
       {/* COMPACT KPI CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10 font">
         {wardTypes.map((type) => {
           const s = wardStats[type];
           const percent = Math.round((s.occupied / s.total) * 100);

@@ -156,7 +156,7 @@ const Settings = () => {
     );
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen relative">
+    <div className="p-8 bg-gray-50 min-h-screen relative font-sans">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-3xl font-extrabold text-gray-800 tracking-tight">
           System Settings

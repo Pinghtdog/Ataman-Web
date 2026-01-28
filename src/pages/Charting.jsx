@@ -77,7 +77,7 @@ const Charting = () => {
   };
 
   return (
-    <div className="p-10 bg-[#F8FAFC] min-h-screen">
+    <div className="p-10 bg-[#F8FAFC] min-h-screen font-sans">
       <div className="mb-10">
         <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
           Digital Charting

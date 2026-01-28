@@ -25,7 +25,6 @@ const BedManagement = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [chosenPatient, setChosenPatient] = useState(null);
   const [showDischargeConfirm, setShowDischargeConfirm] = useState(false);
-  const [referrals, setReferrals] = useState([]);
   const location = useLocation();
 
   const fetchData = async () => {
@@ -57,19 +56,6 @@ const BedManagement = () => {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (referrals.length > 0 && location.state?.autoOpenId) {
-      const targetRef = referrals.find(
-        (r) => r.id === location.state.autoOpenId,
-      );
-      if (targetRef) {
-        setSelectedReferral(targetRef);
-
-        window.history.replaceState({}, document.title);
-      }
-    }
-  }, [referrals, location.state]);
 
   useEffect(() => {
     fetchData();
@@ -181,7 +167,7 @@ const BedManagement = () => {
     );
 
   return (
-    <div className="p-10 bg-[#F8FAFC] min-h-screen">
+    <div className="p-10 bg-[#F8FAFC] min-h-screen font-sans">
       <div className="flex justify-between items-start mb-10">
         <div>
           <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
