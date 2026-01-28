@@ -70,7 +70,6 @@ const Telemed = () => {
     }
   };
 
-  // 4. End Call
   const handleEndCall = async () => {
     if (!activeSession) return;
     await supabase

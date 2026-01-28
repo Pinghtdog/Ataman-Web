@@ -14,14 +14,11 @@ const AdminDashboard = () => {
   const [wardType, setWardType] = useState("General");
   const [facilityId, setFacilityId] = useState(2);
 
-  // Data State
   const [beds, setBeds] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Popup State
   const [modal, setModal] = useState({ show: false, type: "", message: "" });
 
-  // 1. FETCH BEDS
   const fetchBeds = async () => {
     setIsLoading(true);
     const { data, error } = await supabase
@@ -38,7 +35,6 @@ const AdminDashboard = () => {
     fetchBeds();
   }, []);
 
-  // 2. ADD BED
   const handleAddBed = async (e) => {
     e.preventDefault();
 
@@ -68,7 +64,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // 3. DELETE BED
   const handleDeleteBed = async (id, label) => {
     if (
       !window.confirm(

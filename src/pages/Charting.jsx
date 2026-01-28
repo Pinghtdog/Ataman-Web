@@ -18,6 +18,7 @@ const Charting = () => {
   const [patient, setPatient] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
 
   const calculateAge = (birthDateString) => {
     if (!birthDateString) return "N/A";
@@ -35,26 +36,44 @@ const Charting = () => {
     e.preventDefault();
     setLoading(true);
     setPatient(null);
+    setSearchResults([]);
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("users")
       .select("*")
       .or(
         `first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,philhealth_id.eq.${searchTerm}`,
-      )
-      .limit(1)
-      .single();
+      );
 
-    if (data) {
-      setPatient(data);
-      const { data: notes } = await supabase
-        .from("clinical_notes")
-        .select("*")
-        .eq("patient_id", data.id)
-        .order("created_at", { ascending: false });
-      setHistory(notes || []);
+    if (error) {
+      console.error(error);
+      setLoading(false);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      if (data.length === 1) {
+        selectPatient(data[0]);
+      } else {
+        setSearchResults(data);
+      }
+    } else {
+      alert("No patient found with that name or ID.");
     }
     setLoading(false);
+  };
+
+  const selectPatient = async (selectedPatient) => {
+    setPatient(selectedPatient);
+    setSearchResults([]);
+
+    const { data: notes } = await supabase
+      .from("clinical_notes")
+      .select("*")
+      .eq("patient_id", selectedPatient.id)
+      .order("created_at", { ascending: false });
+
+    setHistory(notes || []);
   };
 
   return (
@@ -87,6 +106,41 @@ const Charting = () => {
           Search
         </button>
       </form>
+
+      {/* SELECTION LIST FOR MULTIPLE MATCHES */}
+      {searchResults.length > 1 && (
+        <div className="mb-10 space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+          <p className="text-[10px] font-semibold text-orange-500 uppercase tracking-widest px-4">
+            Multiple records found ({searchResults.length}). Please select:
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {searchResults.map((person) => (
+              <div
+                key={person.id}
+                onClick={() => selectPatient(person)}
+                className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:border-primary cursor-pointer flex justify-between items-center transition-all group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400 group-hover:bg-primary group-hover:text-white transition-colors">
+                    <User size={18} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-gray-800 text-sm uppercase">
+                      {person.first_name} {person.last_name}
+                    </p>
+                    <p className="text-[10px] text-gray-400 font-medium uppercase tracking-tighter">
+                      DOB: {person.birth_date} • {person.barangay}
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[9px] font-bold text-primary uppercase opacity-0 group-hover:opacity-100 transition-opacity">
+                  Open Chart →
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {patient ? (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -121,7 +175,6 @@ const Charting = () => {
 
           {/* 2. INFORMATION GRID */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Personal Details */}
             <InfoCard title="Personal Profile" icon={<Calendar size={16} />}>
               <DataRow
                 label="Age"
@@ -138,7 +191,6 @@ const Charting = () => {
               />
             </InfoCard>
 
-            {/* Medical Baseline */}
             <InfoCard title="Medical Baseline" icon={<HeartPulse size={16} />}>
               <DataRow
                 label="Blood Type"
@@ -164,7 +216,6 @@ const Charting = () => {
               </div>
             </InfoCard>
 
-            {/* Emergency Contact */}
             <InfoCard title="Emergency Contact" icon={<Phone size={16} />}>
               <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
@@ -229,7 +280,6 @@ const Charting = () => {
   );
 };
 
-// HELPER COMPONENTS FOR CLEANER CODE
 const InfoCard = ({ title, icon, children }) => (
   <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col h-full">
     <div className="flex items-center gap-3 mb-6 border-b border-gray-50 pb-4">

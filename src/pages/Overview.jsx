@@ -85,7 +85,6 @@ const Overview = () => {
 
   const wardTypes = Object.keys(wardStats);
 
-  // DYNAMIC STATUS HEADER LOGIC
   const isAnyWardCritical = Object.values(wardStats).some(
     (s) => s.occupied / s.total >= 0.9,
   );
@@ -125,7 +124,6 @@ const Overview = () => {
           const s = wardStats[type];
           const percent = Math.round((s.occupied / s.total) * 100);
 
-          // Color Logic for side-bar
           const colorClass =
             percent >= 90
               ? "bg-red-600"

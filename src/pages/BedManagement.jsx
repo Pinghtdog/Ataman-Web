@@ -90,7 +90,6 @@ const BedManagement = () => {
     setSuggestions([]);
   };
 
-  // DB HANDLERS
   const executeAssignment = async () => {
     if (!chosenPatient || !selectedBed) return;
     await supabase
@@ -119,7 +118,6 @@ const BedManagement = () => {
     fetchData();
   };
 
-  // STATS & GROUPING
   const allWardTypesInDB = [
     ...new Set(beds.map((b) => b.ward_type || "General")),
   ];
