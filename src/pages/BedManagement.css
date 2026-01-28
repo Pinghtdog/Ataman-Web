@@ -1,0 +1,246 @@
+/* 
+.p-6 {
+  padding: 24px;
+}
+
+/* Page Title */
+h2 {
+  color: #111827;
+  margin-bottom: 24px;
+}
+
+/* --- STATS ROW --- */
+.stats-container {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.stat-card {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  text-align: center;
+  border: 1px solid #e5e7eb;
+}
+
+.stat-label {
+  color: #6B7280;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.stat-number {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1F2937;
+}
+
+/* Color accents for numbers */
+.stat-number.red { color: #DC2626; }
+.stat-number.green { color: #059669; }
+.stat-number.yellow { color: #D97706; }
+
+/* --- BED GRID --- */
+.management-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+.manage-card {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s;
+  border: 1px solid #e5e7eb;
+}
+
+.manage-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Header colors based on status */
+.manage-card.available .card-header { background-color: #004D40; color: white; }
+.manage-card.occupied .card-header { background-color: #B91C1C; color: white; }
+.manage-card.cleaning .card-header { background-color: #F59E0B; color: white; }
+
+.card-header {
+  padding: 12px;
+  font-weight: 700;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+.card-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 140px; /* Keep cards uniform height */
+  justify-content: center;
+}
+
+.status-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6B7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Patient Info in Card */
+.patient-icon {
+  color: #9CA3AF;
+  margin-bottom: 4px;
+}
+
+.patient-name {
+  font-weight: 600;
+  color: #111827;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+/* --- ACTION BUTTONS --- */
+.action-btn {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-top: auto; /* Push to bottom */
+}
+
+.btn-assign {
+  background-color: #004D40;
+  color: white;
+}
+.btn-assign:hover { background-color: #00695C; }
+
+.btn-discharge {
+  background-color: white;
+  border: 1px solid #DC2626;
+  color: #DC2626;
+}
+.btn-discharge:hover { background-color: #FEF2F2; }
+
+.btn-ready {
+  background-color: #F59E0B;
+  color: white;
+}
+.btn-ready:hover { background-color: #D97706; }
+
+/* --- MODAL STYLES --- */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.modal-box {
+  background: white;
+  width: 90%;
+  max-width: 450px;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.modal-title {
+  margin: 0 0 20px 0;
+  color: #111827;
+  font-size: 1.25rem;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #D1D5DB;
+  border-radius: 8px;
+  font-size: 1rem;
+  box-sizing: border-box; /* Fixes padding issues */
+}
+.modal-input:focus {
+  border-color: #004D40;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 77, 64, 0.1);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.btn-cancel {
+  padding: 10px 20px;
+  background: white;
+  border: 1px solid #D1D5DB;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #374151;
+}
+
+.btn-confirm {
+  padding: 10px 20px;
+  background: #004D40;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Suggestion Dropdown */
+.input-group { position: relative; }
+
+.suggestions-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  margin-top: 4px;
+  padding: 0;
+  list-style: none;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.suggestion-item {
+  padding: 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+}
+.suggestion-item:last-child { border-bottom: none; }
+.suggestion-item:hover { background-color: #F9FAFB; }
+
+.suggestion-name-text {
+  font-weight: 600;
+  color: #111827;
+} 
