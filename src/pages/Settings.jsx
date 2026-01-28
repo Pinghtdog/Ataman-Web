@@ -217,49 +217,89 @@ const Settings = () => {
           Operational Status
         </h3>
 
-        <div className="border border-gray-100 rounded-2xl p-8 bg-gray-50/50">
-          <div className="mb-6">
-            <label className="block text-gray-700 font-bold text-lg mb-1">
-              Total Facility Occupancy
-            </label>
-            <p className="text-sm text-gray-400">
-              Real-time combined occupancy across ER and all Wards:
-            </p>
-          </div>
+        {/* Dynamic Color Calculation */}
+        {(() => {
+          const isCritical = overallOccupancy >= 90;
+          const isWarning = overallOccupancy >= 70 && overallOccupancy < 90;
 
-          <div className="flex items-center gap-6">
-            {/* READ-ONLY PROGRESS BAR */}
-            <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-visible">
-              {/* The Colored Fill */}
-              <div
-                className="absolute top-0 left-0 h-full bg-red-600 rounded-full transition-all duration-700 ease-out"
-                style={{ width: `${overallOccupancy}%` }}
-              >
-                {/* The Indicator Circle (The "Thumb" from Figma) */}
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-6 h-6 bg-red-600 border-4 border-white rounded-full shadow-lg"></div>
+          // Define dynamic colors
+          const statusColor = isCritical
+            ? "text-red-600"
+            : isWarning
+              ? "text-orange-500"
+              : "text-emerald-600";
+          const bgColor = isCritical
+            ? "bg-red-600"
+            : isWarning
+              ? "bg-orange-500"
+              : "bg-emerald-600";
+          const shadowColor = isCritical
+            ? "rgba(220, 38, 38, 0.4)"
+            : isWarning
+              ? "rgba(249, 115, 22, 0.4)"
+              : "rgba(16, 185, 129, 0.4)";
+
+          return (
+            <div className="border border-gray-100 rounded-2xl p-8 bg-gray-50/50">
+              <div className="mb-6">
+                <label className="block text-gray-700 font-bold text-lg mb-1">
+                  Total Facility Occupancy
+                </label>
+                <p className="text-sm text-gray-400 font-medium">
+                  Real-time combined occupancy across ER and all Wards:
+                </p>
+              </div>
+
+              <div className="flex items-center gap-6">
+                {/* DYNAMIC PROGRESS BAR */}
+                <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-visible">
+                  {/* The Colored Fill */}
+                  <div
+                    className={`absolute top-0 left-0 h-full ${bgColor} rounded-full transition-all duration-700 ease-out`}
+                    style={{
+                      width: `${overallOccupancy}%`,
+                      boxShadow: `0 0 10px ${shadowColor}`,
+                    }}
+                  >
+                    {/* The Indicator Circle (The "Thumb") */}
+                    <div
+                      className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-6 h-6 ${bgColor} border-4 border-white rounded-full shadow-lg transition-colors duration-500`}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* DYNAMIC PERCENTAGE TEXT */}
+                <div className="flex flex-col items-end min-w-[5rem]">
+                  <span
+                    className={`${statusColor} font-black text-4xl leading-none transition-colors duration-500`}
+                  >
+                    {overallOccupancy}%
+                  </span>
+                </div>
+              </div>
+
+              {/* SYSTEM ADVISORY */}
+              <div className="mt-8 flex items-center gap-3 p-4 bg-white rounded-xl border border-gray-100">
+                <div
+                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                    isCritical
+                      ? "bg-red-600 animate-pulse"
+                      : isWarning
+                        ? "bg-orange-500"
+                        : "bg-emerald-500"
+                  }`}
+                ></div>
+                <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">
+                  {isCritical
+                    ? "Diversion Protocol Suggested: Capacity Critical"
+                    : isWarning
+                      ? "Warning: Approaching Capacity"
+                      : "Status: Normal Operations"}
+                </p>
               </div>
             </div>
-
-            {/* PERCENTAGE TEXT */}
-            <div className="flex flex-col items-end min-w-[5rem]">
-              <span className="text-red-600 font-black text-4xl leading-none">
-                {overallOccupancy}%
-              </span>
-            </div>
-          </div>
-
-          {/* SYSTEM ADVISORY */}
-          <div className="mt-8 flex items-center gap-3 p-4 bg-white rounded-xl border border-gray-100">
-            <div
-              className={`w-3 h-3 rounded-full ${overallOccupancy >= 90 ? "bg-red-600 animate-pulse" : "bg-green-500"}`}
-            ></div>
-            <p className="text-xs font-bold text-gray-600 uppercase tracking-widest">
-              {overallOccupancy >= 90
-                ? "Diversion Protocol Suggested: Capacity Critical"
-                : "Status: Normal Operations"}
-            </p>
-          </div>
-        </div>
+          );
+        })()}
       </div>
 
       {/* --- EDIT MODAL --- */}

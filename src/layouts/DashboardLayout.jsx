@@ -12,6 +12,8 @@ import {
   AlertCircle,
   ShieldCheck,
   LogOut,
+  ChevronDown,
+  Activity,
 } from "lucide-react";
 import "./DashboardLayout.css";
 
@@ -19,51 +21,64 @@ const DashboardLayout = ({ userRole }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // State for dynamic data
   const [userName, setUserName] = useState("Staff");
-  const [hospitalCode, setHospitalCode] = useState("NCGH"); // Default fallback
+  const [hospitalCode, setHospitalCode] = useState("NCGH");
+
+  const [overallOccupancy, setOverallOccupancy] = useState(0);
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+
+  const fetchOccupancy = async () => {
+    const { data } = await supabase.from("beds").select("status");
+    if (data && data.length > 0) {
+      const occupied = data.filter((b) => b.status === "occupied").length;
+      setOverallOccupancy(Math.round((occupied / data.length) * 100));
+    }
+  };
 
   useEffect(() => {
     const fetchUserAndFacility = async () => {
-      // 1. Get current authenticated user
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       if (user) {
-        // --- A. FETCH USER NAME ---
         const { data: userData } = await supabase
           .from("users")
           .select("first_name, last_name")
           .eq("id", user.id)
           .single();
 
-        if (userData && userData.first_name && userData.last_name) {
+        if (userData?.first_name) {
           setUserName(`${userData.first_name} ${userData.last_name}`);
         } else {
-          const emailName = user.email ? user.email.split("@")[0] : "Staff";
-          setUserName(emailName);
+          setUserName(user.email?.split("@")[0] || "Staff");
         }
 
-        // --- B. FETCH HOSPITAL SHORT CODE (NEW) ---
         const { data: staffData } = await supabase
           .from("facility_staff")
-          .select(
-            `
-            facility_id,
-            facilities ( short_code )  // <--- Changed 'name' to 'short_code'
-          `,
-          )
+          .select(`facility_id, facilities ( short_code )`)
           .eq("user_id", user.id)
           .maybeSingle();
 
-        if (staffData && staffData.facilities) {
+        if (staffData?.facilities) {
           setHospitalCode(staffData.facilities.short_code);
         }
       }
     };
 
     fetchUserAndFacility();
+    fetchOccupancy();
+
+    const channel = supabase
+      .channel("global-status")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "beds" },
+        fetchOccupancy,
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }, []);
 
   const handleLogout = async () => {
@@ -101,13 +116,37 @@ const DashboardLayout = ({ userRole }) => {
     );
   };
 
+  const getStatusConfig = () => {
+    if (overallOccupancy >= 90)
+      return {
+        color: "text-red-600",
+        bg: "bg-red-50",
+        border: "border-red-100",
+        label: "Critical",
+      };
+    if (overallOccupancy >= 70)
+      return {
+        color: "text-orange-500",
+        bg: "bg-orange-50",
+        border: "border-orange-100",
+        label: "Warning",
+      };
+    return {
+      color: "text-emerald-600",
+      bg: "bg-emerald-50",
+      border: "border-emerald-100",
+      label: "Normal",
+    };
+  };
+
+  const status = getStatusConfig();
+
   return (
     <div className="dashboard-container">
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="brand">
           <h1>A.T.A.M.A.N.</h1>
-          {/* --- UPDATED: Uses Short Code --- */}
           <small>{hospitalCode} Command Center</small>
         </div>
 
@@ -131,7 +170,7 @@ const DashboardLayout = ({ userRole }) => {
                   background: "rgba(255,255,255,0.1)",
                   margin: "10px 15px",
                 }}
-              ></div>
+              />
               <Link
                 to="/admin"
                 className={`nav-link ${location.pathname === "/admin" ? "active" : ""}`}
@@ -149,14 +188,7 @@ const DashboardLayout = ({ userRole }) => {
         <div style={{ marginTop: "auto", padding: "0 15px 20px 15px" }}>
           <button
             onClick={handleLogout}
-            className="nav-link"
-            style={{
-              background: "transparent",
-              border: "1px solid rgba(255,255,255,0.2)",
-              width: "100%",
-              justifyContent: "center",
-              cursor: "pointer",
-            }}
+            className="nav-link logout-btn-sidebar"
           >
             <span>
               <LogOut size={18} />
@@ -168,32 +200,80 @@ const DashboardLayout = ({ userRole }) => {
 
       {/* MAIN CONTENT WRAPPER */}
       <div className="main-wrapper">
-        {/* HEADER */}
         <header className="top-header">
           <div className="header-title">
             <h2>{getCurrentTitle()}</h2>
           </div>
 
-          {/* <div className="search-box">
-            <input type="text" placeholder="Search patients, doctors, records..." />
-          </div> */}
+          <div className="header-right flex items-center gap-6">
+            <div
+              className="relative"
+              onMouseEnter={() => setIsStatusOpen(true)}
+              onMouseLeave={() => !isPinned && setIsStatusOpen(false)}
+            >
+              <button
+                onClick={() => setIsPinned(!isPinned)}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-full transition-all border ${status.bg} ${status.border} ${status.color}`}
+              >
+                <div
+                  className={`w-2 h-2 rounded-full ${overallOccupancy >= 90 ? "bg-red-600 animate-pulse" : status.color.replace("text", "bg")}`}
+                />
+                <span className="text-[10px] font-bold uppercase tracking-widest leading-none">
+                  {status.label}: {overallOccupancy}%
+                </span>
+                <ChevronDown
+                  size={12}
+                  className={`transition-transform ${isStatusOpen ? "rotate-180" : ""}`}
+                />
+              </button>
 
-          <div className="header-right">
-            <div className="user-info">
-              <span>Hi, {userName}</span>
+              {/* Status Details Card */}
+              {(isStatusOpen || isPinned) && (
+                <div className="absolute top-12 right-0 w-64 bg-white rounded-3xl shadow-2xl border border-gray-100 p-6 z-[100] animate-in slide-in-from-top-2 duration-200">
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">
+                      Operational Load
+                    </h4>
+                    <Activity size={14} className={status.color} />
+                  </div>
 
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <span className={`text-3xl font-black ${status.color}`}>
+                      {overallOccupancy}%
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
+                      Capacity
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden mb-4">
+                    <div
+                      className={`h-full transition-all duration-1000 ${status.color.replace("text", "bg")}`}
+                      style={{ width: `${overallOccupancy}%` }}
+                    />
+                  </div>
+
+                  <p className="text-[10px] text-gray-500 font-medium leading-relaxed italic">
+                    {overallOccupancy >= 90
+                      ? "Critical: Hospital is near maximum capacity. Diversion logic enabled."
+                      : "Operating within normal parameters. Resource availability is stable."}
+                  </p>
+
+                  <button
+                    onClick={() => setIsPinned(!isPinned)}
+                    className="w-full mt-4 pt-3 border-t border-gray-50 text-[9px] font-bold text-gray-300 uppercase tracking-widest hover:text-primary transition-colors"
+                  >
+                    {isPinned ? "Click to Unpin" : "Click to Pin Open"}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="user-info flex items-center">
+              <span className="font-medium text-gray-700">Hi, {userName}</span>
               {userRole === "ADMIN" && (
-                <span
-                  style={{
-                    fontSize: "0.7rem",
-                    background: "#FFD54F",
-                    color: "black",
-                    padding: "2px 6px",
-                    borderRadius: "4px",
-                    marginLeft: "8px",
-                    fontWeight: "bold",
-                  }}
-                >
+                <span className="ml-2 bg-[#FFD54F] text-black text-[10px] px-2 py-0.5 rounded font-bold uppercase">
                   ADMIN
                 </span>
               )}
@@ -205,7 +285,6 @@ const DashboardLayout = ({ userRole }) => {
           </div>
         </header>
 
-        {/* PAGE CONTENT */}
         <main className="page-content">
           <Outlet />
         </main>
