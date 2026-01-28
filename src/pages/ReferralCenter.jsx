@@ -102,82 +102,167 @@ const ReferralCenter = () => {
   });
 
   return (
-    <div className="p-8 bg-[#F8FAFC] min-h-screen relative overflow-hidden">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">{showArchive ? 'Audit Logs' : 'Incoming Referrals'}</h1>
-          <p className="text-gray-500 text-sm font-medium uppercase tracking-widest opacity-70">NCGH Emergency Command Center</p>
+  <div className="p-10 bg-[#F1F5F9] min-h-screen relative overflow-hidden font-sans">
+    {/* HEADER SECTION */}
+    <div className="flex justify-between items-end mb-10">
+      <div>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">NCGH Emergency Command Center</p>
         </div>
-        <button onClick={() => setShowArchive(!showArchive)} className={`px-6 py-3 rounded-2xl font-bold text-sm transition-all border-2 ${showArchive ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-white text-gray-600 border-gray-100'}`}>
-          {showArchive ? '← Back to Live' : 'View Archive / Logs'}
-        </button>
+        <h1 className="text-4xl font-black text-slate-800 tracking-tighter">
+          {showArchive ? 'Audit Archive' : 'Incoming Referrals'}
+        </h1>
       </div>
+      
+      <button 
+        onClick={() => setShowArchive(!showArchive)} 
+        className={`px-8 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all border-2 ${
+          showArchive 
+            ? 'bg-slate-800 text-white border-slate-800 shadow-xl' 
+            : 'bg-white text-slate-600 border-slate-200 hover:border-primary hover:text-primary shadow-sm'
+        }`}
+      >
+        {showArchive ? '← Return to Live Board' : 'Database Logs / Archive'}
+      </button>
+    </div>
 
-      <div className="mb-6 flex bg-white p-2 rounded-2xl shadow-sm border border-gray-100 items-center">
-        <input type="text" placeholder="Search Patient ID or Name..." className="w-full outline-none px-4 text-sm text-gray-600 h-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+    {/* SEARCH BAR */}
+    <div className="mb-8 group">
+      <div className="flex bg-white/80 backdrop-blur-md p-1 rounded-[2rem] shadow-sm border border-slate-200 items-center transition-all group-focus-within:border-primary group-focus-within:shadow-lg group-focus-within:shadow-primary/10">
+        <div className="pl-6 text-slate-400">🔍</div>
+        <input 
+          type="text" 
+          placeholder="Search by Patient Name, ID, or Condition..." 
+          className="w-full bg-transparent outline-none px-4 py-3 text-sm font-semibold text-slate-700 placeholder:text-slate-300" 
+          value={searchTerm} 
+          onChange={(e) => setSearchTerm(e.target.value)} 
+        />
       </div>
+    </div>
 
-      <div className="grid grid-cols-12 px-8 mb-4 text-[10px] font-bold text-gray-400 uppercase tracking-[0.25em]">
-        <div className="col-span-3">Patient</div>
-        <div className="col-span-3">Origin / Provider</div>
-        <div className="col-span-2 text-center">Severity</div>
-        <div className="col-span-2 text-center">{showArchive ? 'Status' : 'ETA'}</div>
-        <div className="col-span-2 text-right">Action</div>
-      </div>
+    {/* TABLE HEADER */}
+    <div className="grid grid-cols-12 px-10 mb-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
+      <div className="col-span-3">Patient Identification</div>
+      <div className="col-span-3">Referring Provider</div>
+      <div className="col-span-2 text-center">Clinical Severity</div>
+      <div className="col-span-2 text-center">{showArchive ? 'Decision Status' : 'Estimated Arrival'}</div>
+      <div className="col-span-2 text-right pr-4">Action</div>
+    </div>
 
-      <div className="space-y-4">
-        {displayData.map((ref) => (
-          <div key={ref.id} className="grid grid-cols-12 bg-white rounded-3xl shadow-sm border border-gray-100 items-center h-28 relative hover:shadow-lg transition-all transform hover:-translate-y-1">
-            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${ref.ai_priority_score >= 0.8 ? 'bg-danger' : 'bg-primary'}`} />
-            <div className="col-span-3 flex items-center gap-4 pl-8">
-              <div className="w-12 h-12 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center font-bold text-xs border border-gray-100 uppercase">{ref.users?.first_name?.[0]}{ref.users?.last_name?.[0]}</div>
-              <div>
-                <p className="font-bold text-gray-800 text-sm leading-tight">{ref.users?.first_name} {ref.users?.last_name}</p>
-                <p className="text-[10px] text-gray-400 font-mono">ID: {ref.users?.medical_id}</p>
-              </div>
+    {/* DATA ROWS */}
+    <div className="space-y-4">
+      {displayData.map((ref) => (
+        <div 
+          key={ref.id} 
+          className="grid grid-cols-12 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 items-center h-32 relative hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] transition-all transform hover:-translate-y-1 group"
+        >
+          {/* Priority Indicator Line */}
+          <div className={`absolute left-0 top-8 bottom-8 w-1.5 rounded-r-full transition-all ${
+            ref.ai_priority_score >= 0.8 ? 'bg-rose-500 shadow-[2px_0_10px_rgba(244,63,94,0.4)]' : 'bg-emerald-500'
+          }`} />
+
+          {/* Patient Info */}
+          <div className="col-span-3 flex items-center gap-5 pl-10">
+            <div className="w-14 h-14 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center font-black text-xs border border-slate-100 uppercase transition-all group-hover:bg-slate-100 group-hover:text-slate-600">
+              {ref.users?.first_name?.[0]}{ref.users?.last_name?.[0]}
             </div>
-            <div className="col-span-3">
-              <p className="font-bold text-gray-700 text-sm">{ref.origin?.name}</p>
-              <p className="text-[10px] text-gray-400 font-medium">{ref.doctor_name}</p>
-            </div>
-            <div className="col-span-2 flex justify-center">
-              <span className={`px-4 py-1 rounded-full text-[9px] font-black border-2 ${ref.ai_priority_score >= 0.8 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
-                {ref.ai_priority_score >= 0.8 ? 'ESI 1: RESUS' : 'ESI 4: MINOR'}
-              </span>
-            </div>
-            <div className="col-span-2 text-center">
-              {showArchive ? (
-                <span className={`px-3 py-1 rounded text-[10px] font-black uppercase ${ref.status === 'DIVERTED' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{ref.status}</span>
-              ) : (
-                <><p className="text-sm font-black text-gray-800 leading-none">{calculateLiveETA(ref.ambulances?.latitude, ref.ambulances?.longitude)}</p><p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter mt-1">{ref.ambulances?.plate_number || 'Transporting'}</p></>
-              )}
-            </div>
-            <div className="col-span-2 flex justify-end pr-8">
-              <button onClick={() => setSelectedReferral(ref)} className="border-2 border-primary text-primary px-8 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-primary hover:text-white transition-all">Details</button>
+            <div>
+              <p className="font-black text-slate-800 text-base leading-tight uppercase tracking-tight">
+                {ref.users?.first_name} {ref.users?.last_name}
+              </p>
+              <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-1 italic">
+                {ref.users?.medical_id}
+              </p>
             </div>
           </div>
-        ))}
-      </div>
 
-      {/* DRIVER DEMO CONTROLS */}
-      <div className="fixed bottom-8 right-8 flex flex-col gap-2">
-        <button onClick={resetSimulation} className="bg-gray-800 text-white px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-black transition-all">Reset Position</button>
-        <button onClick={toggleSimulation} className={`p-5 rounded-full shadow-2xl font-black text-white transition-all transform hover:scale-105 active:scale-95 ${isSimulating ? 'bg-red-600 animate-pulse' : 'bg-emerald-600'}`}>
-          {isSimulating ? "STOP SIMULATOR" : "START DRIVER DEMO"}
-        </button>
-      </div>
+          {/* Provider Info */}
+          <div className="col-span-3">
+            <p className="font-black text-slate-700 text-sm uppercase tracking-tight">{ref.origin?.name}</p>
+            <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase italic tracking-tighter">Dr. {ref.doctor_name}</p>
+          </div>
 
-      {selectedReferral && (
-        <ReferralModal 
-          // CRITICAL FIX: Find the live version of the referral so props update in real-time
-          referral={referrals.find(r => r.id === selectedReferral.id) || selectedReferral} 
-          isLog={showArchive} 
-          onClose={() => setSelectedReferral(null)} 
-          onUpdate={fetchReferrals} 
-          calculateETA={calculateLiveETA} 
-        />
-      )}
+          {/* Severity Tag */}
+          <div className="col-span-2 flex justify-center">
+            <span className={`px-5 py-2 rounded-xl text-[9px] font-black border-2 transition-all ${
+              ref.ai_priority_score >= 0.8 
+                ? 'bg-rose-50 text-rose-600 border-rose-100' 
+                : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+            }`}>
+              {ref.ai_priority_score >= 0.8 ? 'ESI 1: RESUSCITATION' : 'ESI 4: NON-URGENT'}
+            </span>
+          </div>
+
+          {/* ETA / Status */}
+          <div className="col-span-2 text-center">
+            {showArchive ? (
+              <span className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${
+                ref.status === 'DIVERTED' 
+                  ? 'bg-rose-100 text-rose-700' 
+                  : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {ref.status}
+              </span>
+            ) : (
+              <div className="animate-in fade-in duration-700">
+                <p className="text-lg font-black text-slate-800 leading-none tabular-nums">
+                  {calculateLiveETA(ref.ambulances?.latitude, ref.ambulances?.longitude)}
+                </p>
+                <div className="flex items-center justify-center gap-1.5 mt-2">
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
+                  <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest italic">
+                    {ref.ambulances?.plate_number || 'TRANSIT'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Action Button */}
+          <div className="col-span-2 flex justify-end pr-10">
+            <button 
+              onClick={() => setSelectedReferral(ref)} 
+              className="bg-white border-2 border-slate-200 text-slate-700 px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:border-primary hover:text-primary hover:shadow-lg hover:shadow-primary/10 transition-all active:scale-95"
+            >
+              Review Case
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
+
+    {/* TACTICAL DEMO CONTROLS */}
+    <div className="fixed bottom-10 right-10 flex flex-col gap-3">
+      <button 
+        onClick={resetSimulation} 
+        className="bg-slate-800/90 backdrop-blur-md text-white px-6 py-3 rounded-2xl text-[9px] font-black uppercase tracking-[0.3em] hover:bg-slate-900 transition-all shadow-xl"
+      >
+        Reset Coordinates
+      </button>
+      <button 
+        onClick={toggleSimulation} 
+        className={`px-8 py-6 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.2)] font-black text-[11px] text-white uppercase tracking-[0.3em] transition-all transform hover:scale-105 active:scale-95 border-b-4 ${
+          isSimulating 
+            ? 'bg-rose-600 border-rose-800 animate-pulse' 
+            : 'bg-emerald-600 border-emerald-800 hover:bg-emerald-500'
+        }`}
+      >
+        {isSimulating ? "INTERRUPT SIMULATOR" : "START DRIVER DEMO"}
+      </button>
+    </div>
+
+    {/* MODAL */}
+    {selectedReferral && (
+      <ReferralModal 
+        referral={referrals.find(r => r.id === selectedReferral.id) || selectedReferral} 
+        isLog={showArchive} 
+        onClose={() => setSelectedReferral(null)} 
+        onUpdate={fetchReferrals} 
+        calculateETA={calculateLiveETA} 
+      />
+    )}
+  </div>
   );
 };
 

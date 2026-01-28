@@ -19,19 +19,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check session
+    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) fetchUserRole(session.user.id);
+      if (session) fetchUserRole(session.user);
       else setLoading(false);
     });
 
-    // auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchUserRole(session.user.id);
+      if (session) fetchUserRole(session.user);
       else {
         setUserRole(null);
         setLoading(false);
@@ -41,70 +39,65 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserRole = async (userId) => {
+  const fetchUserRole = async (user) => {
     try {
+      // 1. Check your public.facility_staff table first
       const { data, error } = await supabase
         .from("facility_staff")
         .select("role")
-        .eq("user_id", userId)
+        .eq("user_id", user.id)
         .single();
 
-      if (error) {
-        console.error("Error fetching role:", error);
-        setUserRole("staff");
-      } else if (data) {
+      if (data) {
         setUserRole(data.role);
+      } else {
+        // 2. FALLBACK: Check the metadata you set via SQL earlier
+        const metaRole = user.app_metadata?.role;
+        setUserRole(metaRole || "staff"); 
       }
     } catch (err) {
       console.error("Unexpected error:", err);
+      setUserRole("staff");
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading)
-    return (
-      <div style={{ padding: "50px", textAlign: "center" }}>
-        Loading ATAMAN...
-      </div>
-    );
+  if (loading) return <div style={{ padding: "50px", textAlign: "center" }}>Loading ATAMAN...</div>;
 
   return (
     <BrowserRouter>
-      {!session ? (
-        <Login setSession={setSession} />
-      ) : (
-        <Routes>
+      <Routes>
+        {/* Unauthenticated Route */}
+        {!session ? (
+          <Route path="*" element={<Login setSession={setSession} />} />
+        ) : (
+          /* Authenticated Routes Wrapper */
           <Route path="/" element={<DashboardLayout userRole={userRole} />}>
             <Route index element={<Overview />} />
             <Route path="beds" element={<BedManagement />} />
+            <Route path="referrals" element={<ReferralCenter />} />
+            <Route path="services" element={<ServiceAndFacilities />} />
             <Route path="telemed" element={<Telemed />} />
             <Route path="charting" element={<Charting />} />
             <Route path="settings" element={<Settings />} />
+            
+            {/* Protected Admin Route */}
             <Route
               path="admin"
               element={
-                userRole === "ADMIN" ? (
+                userRole?.toUpperCase() === "ADMIN" ? (
                   <AdminDashboard />
                 ) : (
                   <Navigate to="/" replace />
                 )
               }
             />
+            
+            {/* Catch-all inside the layout */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      )}
-      <Routes>
-        <Route path="/" element={<DashboardLayout />}>
-          <Route index element={<Overview />} /> 
-          <Route path="beds" element={<BedManagement />} />
-          <Route path="referrals" element={<ReferralCenter />} />
-          <Route path="services" element={<ServiceAndFacilities />} />
-          <Route path="telemed" element={<Telemed />} />
-          <Route path="charting" element={<Charting />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
+        )}
       </Routes>
     </BrowserRouter>
   );
