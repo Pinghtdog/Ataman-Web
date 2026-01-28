@@ -1,84 +1,125 @@
-import React, { useState, useEffect } from "react";
-import { Video, User, Send, Activity, Loader2, PhoneOff } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Video, User, Send, Activity, PhoneOff } from "lucide-react";
 import { supabase } from "../supabaseClient";
+import { ZegoUIKitPrebuilt } from '@zegocloud/zego-uikit-prebuilt'; // <--- NEW IMPORT
+
+// ⚠️ PASTE YOUR KEYS FROM ZEGOCLOUD CONSOLE HERE
+const APP_ID = 1673152262; // (This should be a number, not a string)
+const SERVER_SECRET = "a19851b6acec66db9bff65413ffc2c2c"; 
 
 const Telemed = () => {
   const [queue, setQueue] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
-  const [transcript, setTranscript] = useState("");
-  const [isListening, setIsListening] = useState(false);
+  
+  // Ref for the video container
+  const videoContainerRef = useRef(null);
+  // Ref to store the Zego instance so we can destroy it later
+  const zpRef = useRef(null);
 
+  // 1. Fetch patients
   const fetchQueue = async () => {
     const { data, error } = await supabase
       .from("telemed_sessions")
-      .select(
-        `
+      .select(`
         id, 
         status, 
         meeting_link,
         patient:users!patient_id (id, first_name, last_name, medical_conditions)
-      `,
-      )
-      .in("status", ["scheduled", "active"])
+      `)
+      .in("status", ["scheduled", "active", "PENDING", "SCHEDULED"]) 
       .order("id", { ascending: true });
 
-    if (!error) setQueue(data);
+    if (!error) setQueue(data || []);
     setLoading(false);
   };
 
   useEffect(() => {
     fetchQueue();
-
-    const channel = supabase
-      .channel("telemed-live")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "telemed_sessions" },
-        fetchQueue,
-      )
+    const channel = supabase.channel("telemed-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "telemed_sessions" }, fetchQueue)
       .subscribe();
 
     return () => supabase.removeChannel(channel);
   }, []);
 
-  const handleAccept = async (session) => {
-    const { error } = await supabase
-      .from("telemed_sessions")
-      .update({ status: "active" })
-      .eq("id", session.id);
-
-    if (!error) setActiveSession(session);
+  // 2. HELPER: Generate a secure random Room ID
+  const generateRoomId = () => {
+    return 'ATAMAN-' + Math.random().toString(36).substring(2, 9);
   };
 
-  const startListening = () => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
+  // 3. Connect & Start Zego
+  const handleAccept = async (session) => {
+    let meetingLink = session.meeting_link;
 
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US"; // or 'fil-PH' for Tagalog support!
+    // A. If no room ID exists, create one
+    if (!meetingLink || meetingLink === "NULL" || meetingLink.includes("jit.si")) {
+      meetingLink = generateRoomId();
+      
+      // Save it to Supabase so the patient joins the same room
+      await supabase
+        .from("telemed_sessions")
+        .update({ status: "active", meeting_link: meetingLink })
+        .eq("id", session.id);
+    }
 
-    recognition.onresult = (event) => {
-      let current = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        current += event.results[i][0].transcript;
+    const updatedSession = { ...session, meeting_link: meetingLink };
+    setActiveSession(updatedSession);
+
+    // C. Initialize Zego UI Kit
+    setTimeout(async () => {
+      if (videoContainerRef.current) {
+        // Generate a Kit Token (Client-side generation is fine for testing)
+        // In a real app, you'd fetch this from your backend for security
+        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+          APP_ID, 
+          SERVER_SECRET, 
+          meetingLink, // Room ID
+          Date.now().toString(), // Random User ID
+          "Dr. Staff" // Your Name
+        );
+
+        const zp = ZegoUIKitPrebuilt.create(kitToken);
+        zpRef.current = zp;
+
+        zp.joinRoom({
+          container: videoContainerRef.current,
+          scenario: {
+            mode: ZegoUIKitPrebuilt.VideoConference,
+          },
+          showPreJoinView: false, // <--- SKIPS THE LOBBY (Streamlined)
+          showLeavingView: false,
+          turnOnMicrophoneWhenJoining: true,
+          turnOnCameraWhenJoining: true,
+          showUserList: false,
+          onLeaveRoom: () => handleEndCall() // Auto-close when you hang up
+        });
       }
-      setTranscript(current);
-    };
+    }, 100);
+  };
 
-    recognition.start();
-    setIsListening(true);
+  const handleEndCall = async () => {
+    // Destroy the Zego instance if it exists
+    if (zpRef.current) {
+      zpRef.current.destroy();
+      zpRef.current = null;
+    }
+
+    // Update Database
+    if (activeSession) {
+      await supabase
+        .from("telemed_sessions")
+        .update({ status: "completed" })
+        .eq("id", activeSession.id);
+    }
+    setActiveSession(null);
+    window.location.reload(); // Quick refresh to clear video artifacts
   };
 
   const handleSaveNote = async () => {
     if (!activeSession || !note) return;
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
     const { error } = await supabase.from("clinical_notes").insert({
       patient_id: activeSession.patient.id,
@@ -88,84 +129,47 @@ const Telemed = () => {
     });
 
     if (!error) {
-      alert("Note successfully added to Patient Record.");
+      alert("Note saved to patient record.");
       setNote("");
     }
   };
 
-  const handleEndCall = async () => {
-    if (!activeSession) return;
-    await supabase
-      .from("telemed_sessions")
-      .update({ status: "completed" })
-      .eq("id", activeSession.id);
-    setActiveSession(null);
-  };
-
-  if (loading)
-    return (
-      <div className="p-10 text-center font-black text-gray-400 animate-pulse">
-        ESTABLISHING SECURE CONNECTION...
-      </div>
-    );
-
   return (
-    <div className="p-10 bg-[#F8FAFC] min-h-screen">
-      <div className="mb-10">
-        <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
-          Tele-Ataman Console
-        </h1>
-        <p className="text-gray-500 text-sm font-medium">
-          Live Virtual Consultation Hub
-        </p>
+    <div className="p-8 bg-[#F8FAFC] min-h-screen">
+      <div className="mb-8">
+        <h1 className="text-3xl font-extrabold text-gray-800">Tele-Ataman Console</h1>
+        <p className="text-gray-500 text-sm font-medium">Live Virtual Consultation Hub</p>
       </div>
 
-      <div className="grid grid-cols-12 gap-10">
-        {/* LEFT SIDE: QUEUE (Referral Center Style) */}
+      <div className="grid grid-cols-12 gap-8">
+        {/* LEFT: QUEUE */}
         <div className="col-span-4 space-y-6">
-          <div className="bg-[#00695C] p-8 rounded-[1rem] text-white shadow-xl shadow-emerald-900/20 relative overflow-hidden">
-            <div className="absolute right-[-10px] top-[-10px] opacity-10 rotate-12">
-              <Video size={120} />
-            </div>
-            <h3 className="text-[10px] font-black uppercase tracking-[0.3em] opacity-70">
-              Live Patient Queue
-            </h3>
-            <div className="text-5xl font-black mt-2">
-              {queue.length.toString().padStart(2, "0")}
-            </div>
+          <div className="bg-[#00695C] p-8 rounded-[2rem] text-white shadow-xl relative overflow-hidden">
+             <Video size={100} className="absolute -right-4 -top-4 opacity-10 rotate-12" />
+             <h3 className="text-[10px] font-black uppercase tracking-[0.3em] opacity-70">Live Queue</h3>
+             <div className="text-5xl font-black mt-2">{queue.length.toString().padStart(2, "0")}</div>
           </div>
 
           <div className="space-y-4">
             {queue.length === 0 ? (
-              <div className="p-10 text-center bg-white rounded-[2rem] border border-dashed border-gray-200 text-gray-300 font-bold text-xs uppercase tracking-widest">
+              <div className="p-10 text-center bg-white rounded-[2rem] border border-dashed border-gray-200 text-gray-300 font-bold text-xs uppercase">
                 No patients waiting
               </div>
             ) : (
               queue.map((session) => (
-                <div
-                  key={session.id}
-                  className={`p-6 rounded-[2rem] border transition-all ${activeSession?.id === session.id ? "bg-white border-[#00695C] shadow-lg ring-2 ring-emerald-500/10" : "bg-white border-gray-100"}`}
-                >
+                <div key={session.id} className={`p-6 rounded-[2rem] border transition-all ${activeSession?.id === session.id ? "bg-white border-emerald-500 shadow-lg ring-2 ring-emerald-100" : "bg-white border-gray-100"}`}>
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-400 border border-gray-100">
                         <User size={18} />
                       </div>
                       <div>
-                        <p className="font-black text-gray-800 text-sm uppercase leading-none">
-                          {session.patient?.first_name}{" "}
-                          {session.patient?.last_name}
-                        </p>
-                        <p className="text-[9px] font-bold text-gray-400 mt-2 uppercase tracking-widest">
-                          {session.patient?.medical_conditions || "Follow-up"}
-                        </p>
+                        <p className="font-black text-gray-800 text-sm uppercase">{session.patient?.first_name} {session.patient?.last_name}</p>
+                        <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase">{session.patient?.medical_conditions || "Check-up"}</p>
                       </div>
                     </div>
                     {activeSession?.id !== session.id && (
-                      <button
-                        onClick={() => handleAccept(session)}
-                        className="bg-primary text-white px-5 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest hover:scale-105 transition-all shadow-md"
-                      >
+                      <button onClick={() => handleAccept(session)} className="bg-[#00695C] text-white px-4 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest hover:scale-105 transition-all shadow-md">
                         Connect
                       </button>
                     )}
@@ -176,71 +180,36 @@ const Telemed = () => {
           </div>
         </div>
 
-        {/* RIGHT SIDE: VIDEO & NOTES */}
-        <div className="col-span-8 space-y-8">
-          {/* VIDEO FRAME */}
-          <div className="aspect-video bg-gray-900 rounded-[3rem] shadow-2xl flex flex-col items-center justify-center relative overflow-hidden border-[12px] border-white">
+        {/* RIGHT: VIDEO & NOTES */}
+        <div className="col-span-8 space-y-6">
+          {/* VIDEO CONTAINER */}
+          <div className="aspect-video bg-gray-900 rounded-[3rem] shadow-2xl relative overflow-hidden border-[8px] border-white ring-1 ring-gray-100">
             {activeSession ? (
-              <div className="w-full h-full relative">
-                <iframe
-                  src={activeSession.meeting_link}
-                  allow="camera; microphone; fullscreen; display-capture"
-                  className="w-full h-full border-none"
-                  title="Telemed Call"
-                />
-                <button
-                  onClick={handleEndCall}
-                  className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-red-600 text-white p-4 rounded-full shadow-2xl hover:bg-red-700 transition-all group"
-                >
-                  <PhoneOff
-                    size={24}
-                    className="group-hover:scale-110 transition-transform"
-                  />
-                </button>
-              </div>
+              // ZEGOCLOUD mounts here
+              <div ref={videoContainerRef} className="w-full h-full" />
             ) : (
-              <>
-                <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                  <Video size={32} className="text-gray-600 animate-pulse" />
-                </div>
-                <p className="text-gray-500 font-black uppercase text-[10px] tracking-[0.4em]">
-                  Awaiting clinical selection...
-                </p>
-              </>
+              <div className="flex flex-col items-center justify-center h-full text-gray-600">
+                <Video size={48} className="mb-4 opacity-20" />
+                <p className="font-black uppercase text-[10px] tracking-widest opacity-50">Awaiting Connection</p>
+              </div>
             )}
           </div>
 
-          {/* NOTES AREA */}
-          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
-            <div className="flex justify-between items-center mb-8 border-b border-gray-50 pb-4">
-              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] flex items-center gap-2">
-                <Activity size={14} className="text-primary" /> Clinical
-                Assessment
-              </h3>
-              {activeSession && (
-                <span className="text-[10px] font-black text-primary uppercase bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">
-                  Charting for: {activeSession.patient.first_name}
-                </span>
-              )}
-            </div>
-
-            <textarea
-              className="w-full bg-gray-50 border-none rounded-[2rem] p-8 text-sm font-bold text-gray-600 focus:ring-2 focus:ring-primary min-h-[150px] outline-none transition-all placeholder:text-gray-300"
-              placeholder="Enter subjective notes and observations here..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              disabled={!activeSession}
-            />
-
-            <div className="flex justify-end mt-8">
-              <button
-                onClick={handleSaveNote}
-                disabled={!activeSession || !note}
-                className="bg-primary text-white px-12 py-5 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-emerald-900/20 hover:bg-black hover:shadow-none transition-all flex items-center gap-3 disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <Send size={16} /> Push to Patient Record
-              </button>
-            </div>
+          {/* NOTES */}
+          <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-gray-100">
+             <div className="flex justify-between items-center mb-4">
+                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><Activity size={14} /> Doctor's Notes</h3>
+             </div>
+             <textarea 
+               value={note} onChange={(e) => setNote(e.target.value)}
+               className="w-full bg-gray-50 rounded-[2rem] p-6 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-100 min-h-[120px]" 
+               placeholder="Clinical observations..." 
+             />
+             <div className="flex justify-end mt-4">
+               <button onClick={handleSaveNote} disabled={!activeSession} className="bg-gray-900 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all flex items-center gap-2 disabled:opacity-30">
+                 <Send size={14} /> Save Record
+               </button>
+             </div>
           </div>
         </div>
       </div>
