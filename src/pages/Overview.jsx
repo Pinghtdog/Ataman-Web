@@ -140,7 +140,7 @@ const Overview = () => {
           return (
             <div
               key={type}
-              className="bg-white p-6 rounded-[1rem] shadow-sm border border-gray-100 flex flex-col justify-between h-32 relative overflow-hidden"
+              className="bg-white p-6 rounded-[1rem] shadow-sm border border-gray-100 flex flex-col justify-between h-32 relative overflow-hidden transition-all hover:translate-y-[-2px] hover:shadow-md"
             >
               {/* Left Side Color Strip */}
               <div
@@ -168,7 +168,7 @@ const Overview = () => {
         })}
 
         {/* Incoming Referrals Card */}
-        <div className="bg-white p-6 rounded-[1rem] shadow-sm border border-gray-100 flex flex-col justify-between h-32 relative overflow-hidden">
+        <div className="bg-white p-6 rounded-[1rem] shadow-sm border border-gray-100 flex flex-col justify-between h-32 relative overflow-hidden transition-all hover:translate-y-[-2px] hover:shadow-md">
           <div className="absolute left-0 top-0 bottom-0 w-2 bg-yellow-400" />
           <div>
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1 pl-1">

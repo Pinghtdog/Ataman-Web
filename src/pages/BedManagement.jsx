@@ -10,6 +10,7 @@ import {
   Clock,
   Filter,
   ChevronDown,
+  UserSearch,
 } from "lucide-react";
 
 const BedManagement = () => {
@@ -17,6 +18,7 @@ const BedManagement = () => {
   const [loading, setLoading] = useState(true);
   const [facilityId, setFacilityId] = useState(null);
   const [filterType, setFilterType] = useState("All");
+  const [patientSearchQuery, setPatientSearchQuery] = useState("");
   const [selectedBed, setSelectedBed] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -66,20 +68,30 @@ const BedManagement = () => {
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // SEARCH LOGIC
   useEffect(() => {
     const fetchSuggestions = async () => {
-      if (searchTerm.length < 2 || chosenPatient) {
+      if (searchTerm.trim().length < 2 || chosenPatient) {
         setSuggestions([]);
         return;
       }
-      const { data } = await supabase
-        .from("users")
-        .select("id, first_name, last_name")
-        .ilike("first_name, last_name", `%${searchTerm}%`)
-        .limit(5);
+
+      const words = searchTerm.trim().split(" ");
+      let query = supabase.from("users").select("id, first_name, last_name");
+
+      if (words.length === 1) {
+        query = query.or(
+          `first_name.ilike.%${words[0]}%,last_name.ilike.%${words[0]}%`,
+        );
+      } else {
+        query = query
+          .ilike("first_name", `%${words[0]}%`)
+          .ilike("last_name", `%${words[words.length - 1]}%`);
+      }
+
+      const { data } = await query.limit(5);
       setSuggestions(data || []);
     };
+
     const timeoutId = setTimeout(fetchSuggestions, 300);
     return () => clearTimeout(timeoutId);
   }, [searchTerm, chosenPatient]);
@@ -127,6 +139,12 @@ const BedManagement = () => {
 
     if (filterType !== "All" && type !== filterType) return acc;
 
+    if (patientSearchQuery.trim() !== "") {
+      const pName =
+        `${bed.users?.first_name} ${bed.users?.last_name}`.toLowerCase();
+      if (!pName.includes(patientSearchQuery.toLowerCase())) return acc;
+    }
+
     if (!acc[type]) acc[type] = [];
     acc[type].push(bed);
     return acc;
@@ -142,19 +160,65 @@ const BedManagement = () => {
   if (loading)
     return (
       <div className="h-screen flex items-center justify-center text-gray-400 font-medium tracking-widest text-[10px]">
-        SYNCING FACILITY ASSETS...
+        SYNCING...
       </div>
     );
 
   return (
     <div className="p-10 bg-[#F8FAFC] min-h-screen">
-      <div className="mb-10">
-        <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
-          Bed Management
-        </h1>
-        <p className="text-gray-500 text-sm font-medium">
-          Live Operational Control
-        </p>
+      <div className="flex justify-between items-start mb-10">
+        <div>
+          <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
+            Bed Management
+          </h1>
+          <p className="text-gray-500 text-sm font-medium">
+            Live Asset Control
+          </p>
+        </div>
+
+        <div className="flex gap-4">
+          {/* --- PATIENT LOCATOR SEARCH --- */}
+          <div className="flex items-center gap-3 bg-white p-2 pl-4 rounded-2xl shadow-sm border border-gray-100 w-64 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+            <Search size={14} className="text-gray-300" />
+            <input
+              type="text"
+              placeholder="Find patient in bed..."
+              className="bg-transparent outline-none text-[11px] font-bold text-gray-700 w-full"
+              value={patientSearchQuery}
+              onChange={(e) => setPatientSearchQuery(e.target.value)}
+            />
+            {patientSearchQuery && (
+              <X
+                size={12}
+                className="text-gray-300 cursor-pointer hover:text-red-500 mr-2"
+                onClick={() => setPatientSearchQuery("")}
+              />
+            )}
+          </div>
+
+          {/* --- WARD FILTER DROPDOWN --- */}
+          <div className="flex items-center gap-3 bg-white p-2 pl-4 rounded-2xl shadow-sm border border-gray-100">
+            <Filter size={14} className="text-gray-400" />
+            <div className="relative">
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="bg-transparent outline-none text-[11px] font-bold text-gray-700 pr-8 cursor-pointer appearance-none uppercase tracking-widest"
+              >
+                <option value="All">All Sections</option>
+                {allWardTypesInDB.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={12}
+                className="absolute right-0 top-1 text-gray-400 pointer-events-none"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* KPI STATS ROW */}
@@ -175,32 +239,6 @@ const BedManagement = () => {
           value={stats.cleaning}
           color="text-orange-400"
         />
-      </div>
-
-      {/* dropdown */}
-      <div className="flex items-center gap-3 bg-white p-2 pl-4 rounded-2xl shadow-sm border border-gray-100">
-        <Filter size={14} className="text-gray-400" />
-        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-          Filter:
-        </span>
-        <div className="relative">
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className="bg-transparent outline-none text-sm font-bold text-gray-700 pr-8 cursor-pointer appearance-none"
-          >
-            <option value="All">Show All Sections</option>
-            {allWardTypesInDB.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={14}
-            className="absolute right-0 top-1 text-gray-400 pointer-events-none"
-          />
-        </div>
       </div>
 
       {/* DYNAMIC WARD SECTIONS */}

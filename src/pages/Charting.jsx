@@ -82,7 +82,7 @@ const Charting = () => {
         <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
           Digital Charting
         </h1>
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[0.2em] mt-1">
+        <p className="text-gray-500 text-sm font-medium">
           Naga City Central Health Records
         </p>
       </div>
