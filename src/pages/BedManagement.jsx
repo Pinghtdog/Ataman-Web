@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
+import { useLocation } from "react-router-dom";
 import {
   User,
   Search,
@@ -24,6 +25,8 @@ const BedManagement = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [chosenPatient, setChosenPatient] = useState(null);
   const [showDischargeConfirm, setShowDischargeConfirm] = useState(false);
+  const [referrals, setReferrals] = useState([]);
+  const location = useLocation();
 
   const fetchData = async () => {
     try {
@@ -54,6 +57,19 @@ const BedManagement = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (referrals.length > 0 && location.state?.autoOpenId) {
+      const targetRef = referrals.find(
+        (r) => r.id === location.state.autoOpenId,
+      );
+      if (targetRef) {
+        setSelectedReferral(targetRef);
+
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [referrals, location.state]);
 
   useEffect(() => {
     fetchData();

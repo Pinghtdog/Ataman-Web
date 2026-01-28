@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import ReferralModal from "../components/ReferralModal";
+import { useLocation } from "react-router-dom";
 
 const HOSPITAL_LOCATION = { lat: 13.6218, lng: 123.1948 };
 let simInterval = null;
@@ -11,10 +12,25 @@ const ReferralCenter = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedReferral, setSelectedReferral] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const location = useLocation();
   const [myFacility, setMyFacility] = useState({
     id: null,
     name: "Loading...",
   });
+
+  // auto-open logic from overview page
+  useEffect(() => {
+    if (referrals.length > 0 && location.state?.autoOpenId) {
+      const targetRef = referrals.find(
+        (r) => r.id === location.state.autoOpenId,
+      );
+      if (targetRef) {
+        setSelectedReferral(targetRef);
+
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [referrals, location.state]);
 
   const fetchReferrals = async () => {
     try {
@@ -167,7 +183,7 @@ const ReferralCenter = () => {
   });
 
   return (
-    <div className="p-10 bg-[#F1F5F9] min-h-screen relative overflow-hidden">
+    <div className="p-10 bg-[#F1F5F9] min-h-screen relative overflow-hidden font-sans">
       {/* HEADER SECTION */}
       <div className="flex justify-between items-end mb-10">
         <div>

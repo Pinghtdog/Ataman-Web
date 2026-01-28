@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import { X, BedDouble, Loader2, Clock } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const Overview = () => {
   const [beds, setBeds] = useState([]);
@@ -8,6 +9,7 @@ const Overview = () => {
   const [selectedBed, setSelectedBed] = useState(null);
   const [loading, setLoading] = useState(true);
   const [facilityId, setFacilityId] = useState(null);
+  const navigate = useNavigate();
 
   const fetchAllData = async () => {
     try {
@@ -108,7 +110,7 @@ const Overview = () => {
     );
 
   return (
-    <div className="p-8 bg-[#F8FAFC] min-h-screen">
+    <div className="p-8 bg-[#F8FAFC] min-h-screen ">
       {/* GLOWING DYNAMIC STATUS */}
       <div className="mb-8">
         <span
@@ -227,28 +229,30 @@ const Overview = () => {
             Referral Stream
           </h4>
           <div className="space-y-4">
-            {referrals.length === 0 ? (
-              <p className="py-20 text-center text-gray-300 font-medium text-[10px] uppercase tracking-widest">
-                Clear for now
-              </p>
-            ) : (
-              referrals.map((ref) => (
+            {referrals.map((ref) => (
+              <div
+                key={ref.id}
+                onClick={() =>
+                  navigate("/referrals", { state: { autoOpenId: ref.id } })
+                }
+                className="p-5 bg-gray-50 rounded-[1rem] border border-gray-100 relative overflow-hidden group hover:border-emerald-500 hover:shadow-md cursor-pointer transition-all active:scale-95"
+              >
                 <div
-                  key={ref.id}
-                  className="p-4 bg-gray-50 rounded-[1rem] border border-gray-100 relative overflow-hidden group hover:border-emerald-500 transition-all"
-                >
-                  <div
-                    className={`absolute left-0 top-0 bottom-0 w-1 ${ref.ai_priority_score >= 0.8 ? "bg-red-500" : "bg-[#00695C]"}`}
-                  />
-                  <p className="text-xs font-bold text-gray-800 uppercase mb-1">
+                  className={`absolute left-0 top-0 bottom-0 w-1 ${ref.ai_priority_score >= 0.8 ? "bg-red-500" : "bg-[#00695C]"}`}
+                />
+                <div className="flex justify-between items-start mb-1">
+                  <p className="text-xs font-bold text-gray-800 uppercase">
                     {ref.users?.first_name} {ref.users?.last_name}
                   </p>
-                  <p className="text-[9px] text-gray-400 font-medium uppercase tracking-widest">
-                    From: {ref.origin?.name}
-                  </p>
+                  <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-white border border-gray-100 text-gray-400">
+                    ESI {ref.ai_priority_score >= 0.8 ? "1" : "4"}
+                  </span>
                 </div>
-              ))
-            )}
+                <p className="text-[10px] text-gray-400 font-medium uppercase tracking-widest leading-none">
+                  From: {ref.origin?.name}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </div>

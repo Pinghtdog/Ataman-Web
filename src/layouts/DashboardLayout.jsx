@@ -146,7 +146,7 @@ const DashboardLayout = ({ userRole }) => {
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="brand">
-          <h1>A.T.A.M.A.N.</h1>
+          <h1>ATAMAN</h1>
           <small>{hospitalCode} Command Center</small>
         </div>
 

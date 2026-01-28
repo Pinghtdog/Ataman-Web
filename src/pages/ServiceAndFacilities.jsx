@@ -144,7 +144,7 @@ const ServiceAndFacilities = () => {
     );
 
   return (
-    <div className="flex flex-col h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden">
+    <div className="flex flex-col h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden font-sans">
       {/* 1. TACTICAL HEADER */}
       <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
