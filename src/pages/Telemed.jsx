@@ -7,6 +7,8 @@ const Telemed = () => {
   const [activeSession, setActiveSession] = useState(null);
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
+  const [transcript, setTranscript] = useState("");
+  const [isListening, setIsListening] = useState(false);
 
   const fetchQueue = async () => {
     const { data, error } = await supabase
@@ -48,6 +50,27 @@ const Telemed = () => {
       .eq("id", session.id);
 
     if (!error) setActiveSession(session);
+  };
+
+  const startListening = () => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US"; // or 'fil-PH' for Tagalog support!
+
+    recognition.onresult = (event) => {
+      let current = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        current += event.results[i][0].transcript;
+      }
+      setTranscript(current);
+    };
+
+    recognition.start();
+    setIsListening(true);
   };
 
   const handleSaveNote = async () => {
