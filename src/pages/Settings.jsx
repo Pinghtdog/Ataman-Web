@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from "react";
-import { Save, UserCog, ShieldCheck, User } from "lucide-react";
+import { Save, UserCog, ShieldCheck, User, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 const Settings = () => {
   const [staff, setStaff] = useState([]);
   const [occupancyThreshold, setOccupancyThreshold] = useState(90);
   const [loading, setLoading] = useState(true);
+
   const [currentFacilityId, setCurrentFacilityId] = useState(null);
   const [currentUserRole, setCurrentUserRole] = useState("");
+  const [overallOccupancy, setOverallOccupancy] = useState(0);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState(null);
+  const [newRole, setNewRole] = useState("");
 
   useEffect(() => {
     const initializeSettings = async () => {
@@ -15,37 +21,23 @@ const Settings = () => {
         const {
           data: { user },
         } = await supabase.auth.getUser();
+        if (!user) return;
 
-        if (!user) {
-          console.error("No user logged in");
-          setLoading(false);
-          return;
-        }
-
-        const { data: staffRecord, error: staffError } = await supabase
+        const { data: staffRecord } = await supabase
           .from("facility_staff")
           .select("facility_id, role")
           .eq("user_id", user.id)
           .single();
 
-        if (staffError || !staffRecord) {
-          console.error(
-            "User is not assigned to any facility in facility_staff table.",
-          );
-          setLoading(false);
-          return;
+        if (staffRecord) {
+          setCurrentFacilityId(staffRecord.facility_id);
+          setCurrentUserRole(staffRecord.role);
+          await fetchSettingsData(staffRecord.facility_id);
         }
-
-        setCurrentFacilityId(staffRecord.facility_id);
-        setCurrentUserRole(staffRecord.role);
-
-        await fetchSettingsData(staffRecord.facility_id);
       } catch (error) {
-        console.error("Initialization Error:", error);
-        setLoading(false);
+        console.error("Init Error:", error);
       }
     };
-
     initializeSettings();
   }, []);
 
@@ -56,7 +48,6 @@ const Settings = () => {
         .select("metadata")
         .eq("id", facilityId)
         .single();
-
       if (facilityData?.metadata?.diversion_threshold) {
         setOccupancyThreshold(facilityData.metadata.diversion_threshold);
       }
@@ -73,64 +64,103 @@ const Settings = () => {
           .select("id, first_name, last_name, email")
           .in("id", userIds);
 
-        const mergedStaff = staffData.map((staffMember) => {
-          const userDetails = usersData?.find(
-            (u) => u.id === staffMember.user_id,
-          );
+        const mergedStaff = staffData.map((s) => {
+          const u = usersData?.find((user) => user.id === s.user_id);
           return {
-            ...staffMember,
-            name: userDetails
-              ? `${userDetails.first_name} ${userDetails.last_name}`
-              : "Unknown User",
-            email: userDetails?.email || "",
+            ...s,
+            name: u?.first_name
+              ? `${u.first_name} ${u.last_name}`
+              : "Unknown (Update Profile)",
+            email: u?.email || "No Email",
             access:
-              staffMember.role === "ADMIN"
-                ? "Full System Access"
-                : "Tele-Ataman, Charts",
+              s.role === "ADMIN" ? "Full System Access" : "Tele-Ataman, Charts",
           };
         });
         setStaff(mergedStaff);
       }
-    } catch (error) {
-      console.error("Error loading settings:", error);
-    } finally {
       setLoading(false);
+    } catch (error) {
+      console.error(error);
+      setLoading(false);
+    }
+  };
+
+  const fetchOverallOccupancy = async () => {
+    const { data, error } = await supabase.from("beds").select("status");
+
+    if (data && data.length > 0) {
+      const total = data.length;
+      const occupied = data.filter((b) => b.status === "occupied").length;
+      const percentage = Math.round((occupied / total) * 100);
+      setOverallOccupancy(percentage);
+    }
+  };
+
+  useEffect(() => {
+    fetchOverallOccupancy();
+    const channel = supabase
+      .channel("settings-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "beds" },
+        fetchOverallOccupancy,
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  const openEditModal = (staffMember) => {
+    setSelectedStaff(staffMember);
+    setNewRole(staffMember.role);
+    setIsModalOpen(true);
+  };
+
+  const handleUpdateRole = async () => {
+    if (!selectedStaff) return;
+
+    const { error } = await supabase
+      .from("facility_staff")
+      .update({ role: newRole })
+      .eq("id", selectedStaff.id);
+
+    if (error) {
+      alert("Failed to update role");
+    } else {
+      setStaff(
+        staff.map((s) =>
+          s.id === selectedStaff.id ? { ...s, role: newRole } : s,
+        ),
+      );
+      setIsModalOpen(false);
+      alert("Role updated successfully!");
     }
   };
 
   const handleSaveThreshold = async () => {
     if (!currentFacilityId) return;
-
-    const { error } = await supabase
+    await supabase
       .from("facilities")
       .update({
         metadata: { diversion_threshold: parseInt(occupancyThreshold) },
       })
       .eq("id", currentFacilityId);
-
-    if (error) {
-      alert("Error saving settings");
-    } else {
-      alert("Automation rules updated successfully!");
-    }
+    alert("Automation rules updated!");
   };
 
   if (loading)
     return (
-      <div className="p-10 text-gray-500">
-        Loading your facility settings...
+      <div className="p-10 text-gray-400 font-bold animate-pulse text-center">
+        Loading Settings...
       </div>
     );
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
+    <div className="p-8 bg-gray-50 min-h-screen relative">
       <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800">System Settings</h2>
-          <p className="text-gray-500">
-            Manage staff access and automation rules.
-          </p>
-        </div>
+        <h2 className="text-3xl font-extrabold text-gray-800 tracking-tight">
+          System Settings
+        </h2>
         {currentUserRole === "ADMIN" && (
           <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-bold border border-green-200">
             YOU ARE ADMIN
@@ -138,111 +168,186 @@ const Settings = () => {
         )}
       </div>
 
-      {/* SECTION 1: STAFF MANAGEMENT */}
-      <div className="bg-white rounded-lg shadow mb-8 p-6 animate-fade-in">
+      {/* STAFF TABLE */}
+      <div className="bg-white rounded-lg shadow mb-8 p-6">
         <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <UserCog size={20} className="text-gray-600" /> Staff Management
+          <UserCog size={20} /> Staff Management
         </h3>
-
-        {staff.length === 0 ? (
-          <div className="p-6 text-center border-2 border-dashed border-gray-200 rounded-lg">
-            <p className="text-gray-400">
-              No staff members found linked to this facility.
-            </p>
-            <p className="text-sm text-gray-400 mt-2">
-              Make sure you have added entries to the <b>facility_staff</b>{" "}
-              table.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-xs text-gray-400 uppercase border-b bg-gray-50">
-                  <th className="p-3 font-medium rounded-tl-lg">Name</th>
-                  <th className="p-3 font-medium">Role</th>
-                  <th className="p-3 font-medium">Access Level</th>
-                  <th className="p-3 rounded-tr-lg"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {staff.map((s) => (
-                  <tr key={s.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="p-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-gray-600">
-                          <User size={16} />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{s.name}</p>
-                          <p className="text-xs text-gray-500">{s.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      {s.role === "ADMIN" ? (
-                        <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs uppercase font-bold border border-purple-200">
-                          <ShieldCheck size={12} /> ADMIN
-                        </span>
-                      ) : (
-                        <span className="bg-blue-50 text-blue-600 px-2 py-1 rounded text-xs uppercase font-bold border border-blue-100">
-                          {s.role}
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 text-gray-600 text-sm">{s.access}</td>
-                    <td className="p-3 text-right">
-                      <button className="text-gray-400 hover:text-blue-600 transition-colors">
-                        Edit
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <table className="w-full text-left">
+          <thead>
+            <tr className="text-xs text-gray-400 uppercase border-b bg-gray-50">
+              <th className="p-3 font-medium">Name</th>
+              <th className="p-3 font-medium">Role</th>
+              <th className="p-3 font-medium">Access Level</th>
+              <th className="p-3"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {staff.map((s) => (
+              <tr key={s.id} className="hover:bg-gray-50">
+                <td className="p-3">
+                  <div className="font-medium text-gray-900">{s.name}</div>
+                  <div className="text-xs text-gray-500">{s.email}</div>
+                </td>
+                <td className="p-3">
+                  <span
+                    className={`px-2 py-1 rounded text-xs uppercase font-bold border ${s.role === "ADMIN" ? "bg-purple-100 text-purple-700 border-purple-200" : "bg-blue-50 text-blue-600 border-blue-100"}`}
+                  >
+                    {s.role}
+                  </span>
+                </td>
+                <td className="p-3 text-gray-600 text-sm">{s.access}</td>
+                <td className="p-3 text-right">
+                  <button
+                    onClick={() => openEditModal(s)}
+                    className="text-blue-600 hover:text-blue-900 text-sm font-medium"
+                  >
+                    Edit
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {/* SECTION 2: AUTOMATION THRESHOLDS */}
+      {/* SECTION 2: LIVE OPERATIONAL STATUS */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">
-          Automation Thresholds
+        <h3 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-tight">
+          Operational Status
         </h3>
 
-        <div className="border border-gray-100 rounded p-6 bg-gray-50">
-          <label className="block text-gray-700 font-medium mb-1">
-            Diversion Protocol Trigger
-          </label>
-          <p className="text-sm text-gray-500 mb-6">
-            Automatically suggest referring patients to BHCs when occupancy
-            exceeds:
-          </p>
+        {/* Dynamic Color Calculation */}
+        {(() => {
+          const isCritical = overallOccupancy >= 90;
+          const isWarning = overallOccupancy >= 70 && overallOccupancy < 90;
 
-          <div className="flex items-center gap-6">
-            <input
-              type="range"
-              min="50"
-              max="100"
-              value={occupancyThreshold}
-              onChange={(e) => setOccupancyThreshold(e.target.value)}
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#00695C]"
-            />
-            <span className="text-[#00695C] font-bold text-3xl min-w-[4rem]">
-              {occupancyThreshold}%
-            </span>
-          </div>
+          // Define dynamic colors
+          const statusColor = isCritical
+            ? "text-red-600"
+            : isWarning
+              ? "text-orange-500"
+              : "text-emerald-600";
+          const bgColor = isCritical
+            ? "bg-red-600"
+            : isWarning
+              ? "bg-orange-500"
+              : "bg-emerald-600";
+          const shadowColor = isCritical
+            ? "rgba(220, 38, 38, 0.4)"
+            : isWarning
+              ? "rgba(249, 115, 22, 0.4)"
+              : "rgba(16, 185, 129, 0.4)";
 
-          <div className="flex justify-end mt-6">
-            <button
-              onClick={handleSaveThreshold}
-              className="bg-[#00695C] text-white px-6 py-2 rounded font-medium hover:bg-[#004D40] flex items-center gap-2 shadow-md hover:shadow-lg transition-all"
+          return (
+            <div className="border border-gray-100 rounded-2xl p-8 bg-gray-50/50">
+              <div className="mb-6">
+                <label className="block text-gray-700 font-bold text-lg mb-1">
+                  Total Facility Occupancy
+                </label>
+                <p className="text-sm text-gray-400 font-medium">
+                  Real-time combined occupancy across ER and all Wards:
+                </p>
+              </div>
+
+              <div className="flex items-center gap-6">
+                {/* DYNAMIC PROGRESS BAR */}
+                <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-visible">
+                  {/* The Colored Fill */}
+                  <div
+                    className={`absolute top-0 left-0 h-full ${bgColor} rounded-full transition-all duration-700 ease-out`}
+                    style={{
+                      width: `${overallOccupancy}%`,
+                      boxShadow: `0 0 10px ${shadowColor}`,
+                    }}
+                  >
+                    {/* The Indicator Circle (The "Thumb") */}
+                    <div
+                      className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-6 h-6 ${bgColor} border-4 border-white rounded-full shadow-lg transition-colors duration-500`}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* DYNAMIC PERCENTAGE TEXT */}
+                <div className="flex flex-col items-end min-w-[5rem]">
+                  <span
+                    className={`${statusColor} font-black text-4xl leading-none transition-colors duration-500`}
+                  >
+                    {overallOccupancy}%
+                  </span>
+                </div>
+              </div>
+
+              {/* SYSTEM ADVISORY */}
+              <div className="mt-8 flex items-center gap-3 p-4 bg-white rounded-xl border border-gray-100">
+                <div
+                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                    isCritical
+                      ? "bg-red-600 animate-pulse"
+                      : isWarning
+                        ? "bg-orange-500"
+                        : "bg-emerald-500"
+                  }`}
+                ></div>
+                <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">
+                  {isCritical
+                    ? "Diversion Protocol Suggested: Capacity Critical"
+                    : isWarning
+                      ? "Warning: Approaching Capacity"
+                      : "Status: Normal Operations"}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* --- EDIT MODAL --- */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-96 p-6 animate-fade-in">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">Edit Staff Role</h3>
+              <button onClick={() => setIsModalOpen(false)}>
+                <X size={20} className="text-gray-400 hover:text-gray-600" />
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-500 mb-4">
+              Change permissions for <b>{selectedStaff?.name}</b>.
+            </p>
+
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              Select Role
+            </label>
+            <select
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              className="w-full border border-gray-300 rounded p-2 mb-6 focus:outline-none focus:border-[#00695C]"
             >
-              <Save size={18} /> Save Changes
-            </button>
+              <option value="DOCTOR">DOCTOR</option>
+              <option value="NURSE">NURSE</option>
+              <option value="DISPATCHER">DISPATCHER</option>
+              <option value="ADMIN">ADMIN</option>
+            </select>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateRole}
+                className="px-4 py-2 bg-[#00695C] text-white rounded hover:bg-[#004D40]"
+              >
+                Save Changes
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
