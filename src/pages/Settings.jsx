@@ -148,12 +148,34 @@ const Settings = () => {
     alert("Automation rules updated!");
   };
 
-  if (loading)
-    return (
-      <div className="p-10 text-gray-400 font-bold animate-pulse text-center">
-        Loading Settings...
+if (loading) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
+      <div className="relative mb-6 flex items-center justify-center">
+        {/* Subtle Green Pulse */}
+        <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75"></div>
+        
+        {/* Main Emerald Spinner */}
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"></div>
       </div>
-    );
+
+      <div className="space-y-2 text-center">
+        <h2 className="text-lg font-bold tracking-tight">
+          Settings..
+        </h2>
+        
+        <div className="flex items-center justify-center gap-2">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400"></span>
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.2s]"></span>
+        </div>
+
+        <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
+          Ataman Security Protocol Active
+        </p>
+      </div>
+    </div>
+  );
+}
 
   return (
     <div className="p-8 bg-gray-50 min-h-screen relative">
