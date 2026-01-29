@@ -295,20 +295,20 @@ const Telemed = () => {
                       expandedPatientId === s.id ? null : s.id,
                     )
                   }
-                  className={`group p-6 rounded-[1rem] border transition-all duration-300 ${activeSession?.id === s.id ? "bg-emerald-50 border-emerald-300 shadow-lg" : "bg-white border-slate-100 hover:border-emerald-200"}`}
+                  className={`group px-5 py-4 rounded-[1.5rem] border transition-all duration-300 ${activeSession?.id === s.id ? "bg-emerald-50 border-emerald-300 shadow-lg" : "bg-white border-slate-100 hover:border-emerald-200"}`}
                 >
                   <div className="flex justify-between items-center gap-4">
                     <div className="flex items-center gap-5 flex-1 min-w-0">
                       <div
-                        className={`w-14 h-14 rounded-[1rem] shrink-0 flex items-center justify-center transition-colors ${activeSession?.id === s.id ? "bg-emerald-500 text-white shadow-lg" : "bg-slate-50 text-slate-300 border border-slate-100"}`}
+                        className={`w-11 h-11 rounded-[1rem] shrink-0 flex items-center justify-center transition-colors ${activeSession?.id === s.id ? "bg-emerald-500 text-white shadow-lg" : "bg-slate-50 text-slate-300 border border-slate-100"}`}
                       >
-                        <User size={24} />
+                        <User size={20} />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-black text-slate-800 uppercase tracking-tighter truncate">
+                        <p className="text-sm font-black text-slate-800 uppercase tracking-tighter leading-tight">
                           {s.patient.first_name} {s.patient.last_name}
                         </p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 italic truncate">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic truncate">
                           {s.patient.medical_conditions || "Routine checkup"}
                         </p>
                       </div>
@@ -319,7 +319,7 @@ const Telemed = () => {
                           e.stopPropagation();
                           setShowAcceptConfirm(s);
                         }}
-                        className="shrink-0 w-12 h-12 rounded-2xl bg-emerald-600 text-white shadow-xl hover:bg-slate-900 transition-all active:scale-90 flex items-center justify-center"
+                        className="shrink-0 w-10 h-10 rounded-2xl bg-emerald-600 text-white shadow-xl hover:bg-slate-900 transition-all active:scale-90 flex items-center justify-center"
                       >
                         <Phone size={18} fill="currentColor" />
                       </button>
