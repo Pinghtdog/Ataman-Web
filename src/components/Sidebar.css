@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+
 .sidebar {
   width: 260px;
   background-color: #004D40; 
@@ -9,11 +11,18 @@
   top: 0;
   padding: 24px 16px;
   box-sizing: border-box;
+
+  font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 .sidebar-header {
   margin-bottom: 40px;
   padding-left: 12px;
+}
+
+.sidebar, 
+.sidebar * {
+  font-family: 'Poppins', sans-serif !important;
 }
 
 .brand-title {

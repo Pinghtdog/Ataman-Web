@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Search,
   FileText,
@@ -11,6 +11,9 @@ import {
   Shield,
   ChevronRight,
   Loader2,
+  Clock,
+  History,
+  X, // Added X icon for clearing
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 
@@ -18,8 +21,36 @@ const Charting = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [patient, setPatient] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
+  const [recentPatients, setRecentPatients] = useState([]);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingRecent, setLoadingRecent] = useState(true);
+
+  // 1. FETCH RECENTLY ACCESSED ON LOAD
+  useEffect(() => {
+    fetchRecent();
+  }, []);
+
+  const fetchRecent = async () => {
+    setLoadingRecent(true);
+    const { data } = await supabase
+      .from("users")
+      .select("id, first_name, last_name, birth_date, barangay, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(6);
+
+    if (data) setRecentPatients(data);
+    setLoadingRecent(false);
+  };
+
+  // --- NEW: CLEAR FUNCTION ---
+  const handleClear = () => {
+    setPatient(null);
+    setHistory([]);
+    setSearchTerm("");
+    setSearchResults([]);
+    fetchRecent(); // Refresh the list to show the most recent updates
+  };
 
   const calculateAge = (dob) => {
     if (!dob) return "N/A";
@@ -74,45 +105,113 @@ const Charting = () => {
       .eq("patient_id", selectedPatient.id)
       .order("created_at", { ascending: false });
     setHistory(notes || []);
+
+    await supabase
+      .from("users")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", selectedPatient.id);
   };
 
   return (
     <div className="p-10 bg-[#F8FAFC] min-h-screen font-sans">
       <div className="mb-10">
-        <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
+        <h1 className="text-4xl font-black text-slate-800 tracking-tighter leading-none">
           Digital Charting
         </h1>
-        <p className="text-gray-500 text-sm font-medium">
-          Naga City Central Health Records
+        <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-[0.2em] mt-2">
+          Naga City Central Health Records • Secure Node
         </p>
       </div>
 
       {/* SEARCH BAR */}
-      <form
-        onSubmit={handleSearch}
-        className="mb-10 flex bg-white p-2 rounded-3xl shadow-sm border border-gray-100 items-center max-w-2xl transition-all focus-within:shadow-md"
-      >
-        <div className="pl-4 text-gray-400">
-          <Search size={20} />
+      <div className="flex gap-4 items-center max-w-3xl mb-10">
+        <form
+          onSubmit={handleSearch}
+          className="flex-1 flex bg-white p-2 rounded-3xl shadow-sm border border-gray-100 items-center transition-all focus-within:shadow-md"
+        >
+          <div className="pl-4 text-gray-400">
+            <Search size={20} />
+          </div>
+          <input
+            type="text"
+            placeholder="Search first, last, or full name..."
+            className="w-full outline-none px-4 text-sm font-medium text-gray-600 h-12 bg-transparent"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <button className="bg-gray-900 text-white px-8 h-12 rounded-2xl font-bold text-[10px] uppercase tracking-widest hover:bg-black transition-all">
+            {loading ? (
+              <Loader2 className="animate-spin" size={16} />
+            ) : (
+              "Search"
+            )}
+          </button>
+        </form>
+
+        {/* Clear Button (Visible only when patient or results exist) */}
+        {(patient || searchResults.length > 0) && (
+          <button
+            onClick={handleClear}
+            className="bg-white border border-gray-200 text-gray-400 p-3.5 rounded-2xl hover:text-red-500 hover:border-red-100 transition-all shadow-sm"
+            title="Clear and Return to Home"
+          >
+            <X size={20} />
+          </button>
+        )}
+      </div>
+
+      {/* --- SECTION: RECENTLY ACCESSED --- */}
+      {!patient && searchResults.length === 0 && (
+        <div className="space-y-6 animate-in fade-in duration-700">
+          <div className="flex items-center gap-2 px-4">
+            <History size={14} className="text-[#00695C]" />
+            <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+              Recently Modified Records
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {loadingRecent
+              ? [1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="h-24 bg-white border border-gray-50 rounded-[2rem] animate-pulse"
+                  />
+                ))
+              : recentPatients.map((person) => (
+                  <div
+                    key={person.id}
+                    onClick={() => selectPatient(person)}
+                    className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:border-emerald-500 cursor-pointer flex justify-between items-center transition-all group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-300 group-hover:bg-[#00695C] group-hover:text-white transition-colors">
+                        <User size={18} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-800 text-xs uppercase tracking-tight">
+                          {person.first_name} {person.last_name}
+                        </p>
+                        <p className="text-[9px] font-medium text-gray-400 uppercase tracking-tighter">
+                          {person.barangay || "Area Unset"}
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight
+                      size={14}
+                      className="text-gray-200 group-hover:text-emerald-500"
+                    />
+                  </div>
+                ))}
+          </div>
         </div>
-        <input
-          type="text"
-          placeholder="Search first, last, or full name..."
-          className="w-full outline-none px-4 text-sm font-medium text-gray-600 h-12 bg-transparent"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <button className="bg-gray-900 text-white px-8 h-12 rounded-2xl font-bold text-[10px] uppercase tracking-widest hover:bg-black transition-all">
-          {loading ? <Loader2 className="animate-spin" size={16} /> : "Search"}
-        </button>
-      </form>
+      )}
 
       {/* --- MULTIPLE RESULTS LIST --- */}
       {searchResults.length > 1 && (
         <div className="mb-10 space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
           <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest px-6 flex items-center gap-2">
-            <AlertCircle size={12} /> Multiple records found. Please select
-            patient:
+            <AlertCircle size={12} /> Conflict Found: Select patient record
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {searchResults.map((person) => (
@@ -121,6 +220,7 @@ const Charting = () => {
                 onClick={() => selectPatient(person)}
                 className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:border-primary cursor-pointer flex justify-between items-center transition-all group"
               >
+                {/* ... existing card content ... */}
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-300 group-hover:bg-[#00695C] group-hover:text-white transition-colors">
                     <User size={18} />
@@ -137,7 +237,7 @@ const Charting = () => {
                 </div>
                 <ChevronRight
                   size={18}
-                  className="text-gray-200 group-hover:text-primary group-hover:translate-x-1 transition-all"
+                  className="text-gray-200 group-hover:text-primary transition-all"
                 />
               </div>
             ))}
@@ -145,39 +245,49 @@ const Charting = () => {
         </div>
       )}
 
-      {/* --- PATIENT CHART (The rest of your UI) --- */}
+      {/* --- PATIENT CHART --- */}
       {patient && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-          {/* Header Card */}
-          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden">
+          {/* Header Card with Close Button */}
+          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden group">
             <div className="absolute left-0 top-0 bottom-0 w-2 bg-[#00695C]" />
             <div className="flex items-center gap-8">
               <div className="w-24 h-24 bg-gray-50 rounded-[2.5rem] flex items-center justify-center border border-gray-100 text-[#00695C]">
                 <User size={40} />
               </div>
               <div>
-                <h2 className="text-3xl font-extrabold text-gray-800 tracking-tight">
+                <h2 className="text-3xl font-extrabold text-gray-800 tracking-tight leading-none">
                   {patient.first_name} {patient.last_name}
                 </h2>
-                <p className="text-[10px] font-bold text-[#00695C] uppercase tracking-widest mt-1 opacity-60 italic">
+                <p className="text-[10px] font-bold text-[#00695C] uppercase tracking-widest mt-3 opacity-60 italic leading-none">
                   Central Medical ID: {patient.id.slice(0, 8)}
                 </p>
               </div>
             </div>
-            <div className="text-right space-y-2">
-              <div className="flex items-center justify-end gap-2 text-emerald-600">
-                <Shield size={14} />
-                <span className="text-[10px] font-bold uppercase tracking-widest">
-                  PhilHealth Active
+
+            <div className="flex items-center gap-10">
+              <div className="text-right space-y-2">
+                <div className="flex items-center justify-end gap-2 text-emerald-600">
+                  <Shield size={14} />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">
+                    PhilHealth Active
+                  </span>
+                </div>
+                <span className="inline-block bg-emerald-50 text-emerald-600 px-4 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-widest border border-emerald-100">
+                  Verified Resident
                 </span>
               </div>
-              <span className="inline-block bg-emerald-50 text-emerald-600 px-4 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-widest border border-emerald-100">
-                Verified Resident
-              </span>
+
+              {/* Internal Close Button */}
+              <button
+                onClick={handleClear}
+                className="p-3 bg-gray-50 text-gray-300 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all border border-transparent hover:border-red-100"
+              >
+                <X size={24} />
+              </button>
             </div>
           </div>
 
-          {/* Info Tiles */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <InfoCard title="Profile Details" icon={<Calendar size={16} />}>
               <DataRow
@@ -202,14 +312,14 @@ const Charting = () => {
                 <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">
                   Stated Conditions
                 </p>
-                <p className="text-xs font-medium text-gray-600">
+                <p className="text-xs font-medium text-gray-600 leading-relaxed italic">
                   {patient.medical_conditions || "None listed."}
                 </p>
               </div>
             </InfoCard>
 
             <InfoCard title="Emergency Alert" icon={<AlertCircle size={16} />}>
-              <div className="p-4 bg-red-50/50 rounded-2xl border border-red-50">
+              <div className="p-5 bg-red-50/50 rounded-[1.8rem] border border-red-50">
                 <p className="text-[9px] font-bold text-red-400 uppercase tracking-widest mb-1">
                   Critical Allergies
                 </p>
@@ -219,16 +329,15 @@ const Charting = () => {
               </div>
               <div className="mt-4 px-1">
                 <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">
-                  Contact Person
+                  Emergency Contact
                 </p>
-                <p className="text-xs font-bold text-gray-700">
+                <p className="text-xs font-bold text-gray-700 uppercase tracking-tight">
                   {patient.emergency_contact_name || "N/A"}
                 </p>
               </div>
             </InfoCard>
           </div>
 
-          {/* Interaction Stream */}
           <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
             <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.3em] mb-10 border-b border-gray-50 pb-4 text-center">
               Interaction Stream
@@ -247,7 +356,7 @@ const Charting = () => {
                       <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-[#00695C] group-hover:text-white transition-colors">
                         <Activity size={14} />
                       </div>
-                      <span className="text-[10px] font-bold uppercase text-gray-600 tracking-widest">
+                      <span className="text-[10px] font-bold uppercase text-gray-700 tracking-widest">
                         Medical Record
                       </span>
                     </div>
@@ -269,11 +378,11 @@ const Charting = () => {
   );
 };
 
-// HELPERS
+// HELPERS (Unchanged)
 const InfoCard = ({ title, icon, children }) => (
   <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100 h-full">
-    <div className="flex items-center gap-3 mb-6 border-b border-gray-50 pb-4">
-      <div className="text-primary opacity-30">{icon}</div>
+    <div className="flex items-center gap-3 mb-6 border-b border-gray-50 pb-4 text-primary">
+      {icon}
       <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
         {title}
       </h3>

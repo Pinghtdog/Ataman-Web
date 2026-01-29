@@ -102,12 +102,35 @@ const Overview = () => {
         glow: "shadow-[0_0_15px_rgba(5,150,105,0.4)]",
       };
 
-  if (loading)
-    return (
-      <div className="h-screen flex items-center justify-center text-gray-400 font-medium tracking-widest text-[10px]">
-        SYNCING COMMAND...
+  if (loading) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
+      <div className="relative mb-6 flex items-center justify-center">
+        {/* Subtle Green Pulse */}
+        <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75"></div>
+        
+        {/* Main Emerald Spinner */}
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"></div>
       </div>
-    );
+
+      <div className="space-y-2 text-center">
+        <h2 className="text-lg font-bold tracking-tight">
+          Syncing Overview...
+        </h2>
+        
+        <div className="flex items-center justify-center gap-2">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400"></span>
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.2s]"></span>
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.4s]"></span>
+        </div>
+
+        <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
+          Ataman Security Protocol Active
+        </p>
+      </div>
+    </div>
+  );
+}
 
   return (
     <div className="p-8 bg-[#F8FAFC] min-h-screen font-sans">

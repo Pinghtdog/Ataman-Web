@@ -22,7 +22,7 @@ const Sidebar = ({ userRole }) => {
   };
 
   return (
-    <div className="sidebar">
+    <div className="sidebar font-sans">
       <div className="sidebar-header">
         <h1 className="brand-title">A.T.A.M.A.N.</h1>
         <p className="brand-subtitle">NCGH Command Center</p>

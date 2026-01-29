@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import ReferralModal from "../components/ReferralModal";
-import { useLocation } from "react-router-dom";
 
 const HOSPITAL_LOCATION = { lat: 13.6218, lng: 123.1948 };
 let simInterval = null;
@@ -12,70 +11,28 @@ const ReferralCenter = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedReferral, setSelectedReferral] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
-  const location = useLocation();
-  const [myFacility, setMyFacility] = useState({
-    id: null,
-    name: "Loading...",
-  });
-
-  // auto-open logic from overview page
-  useEffect(() => {
-    if (referrals.length > 0 && location.state?.autoOpenId) {
-      const targetRef = referrals.find(
-        (r) => r.id === location.state.autoOpenId,
-      );
-      if (targetRef) {
-        setSelectedReferral(targetRef);
-
-        window.history.replaceState({}, document.title);
-      }
-    }
-  }, [referrals, location.state]);
 
   const fetchReferrals = async () => {
-    try {
-      // 1. Get the current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+    const { data, error } = await supabase
+      .from("referrals")
+      .select(
+        `
+        id, reference_number, status, chief_complaint, ai_priority_score, 
+        doctor_name, diagnosis_impression, created_at, eta_status,
+        users!patient_id (first_name, last_name, medical_id),
+        origin:facilities!origin_facility_id (name),
+        ambulances!ambulance_id (id, plate_number, latitude, longitude)
+      `,
+      )
+      .order("created_at", { ascending: false });
 
-      // 2. Find the facility this staff member is assigned to
-      const { data: staffRecord } = await supabase
-        .from("facility_staff")
-        .select("facility_id, facilities(name)")
-        .eq("user_id", user.id)
-        .single();
-
-      if (staffRecord) {
-        const fId = staffRecord.facility_id;
-        setMyFacility({ id: fId, name: staffRecord.facilities.name });
-
-        // 3. Fetch referrals only for THIS facility
-        const { data, error } = await supabase
-          .from("referrals")
-          .select(
-            `
-            id, reference_number, status, chief_complaint, ai_priority_score, 
-            doctor_name, diagnosis_impression, created_at, eta_status,
-            users!patient_id (first_name, last_name, medical_id),
-            origin:facilities!origin_facility_id (name),
-            ambulances!ambulance_id (id, plate_number, latitude, longitude)
-          `,
-          )
-          .eq("destination_facility_id", fId)
-          .order("created_at", { ascending: false });
-
-        if (!error) setReferrals(data);
-      }
-    } catch (err) {
-      console.error("Referral Fetch Logic Error:", err);
-    }
+    if (!error) setReferrals(data);
   };
 
   useEffect(() => {
     fetchReferrals();
 
+    // 1. Listen for status changes (Accepted/Diverted)
     const sub = supabase
       .channel("referral-updates")
       .on(
@@ -85,6 +42,7 @@ const ReferralCenter = () => {
       )
       .subscribe();
 
+    // 2. Listen for GPS movement (Updates state without re-fetching everything)
     const ambSub = supabase
       .channel("amb-updates")
       .on(
@@ -130,6 +88,13 @@ const ReferralCenter = () => {
           .single();
 
         if (data) {
+          await supabase
+            .from("ambulances")
+            .update({
+              latitude: data.latitude - 0.0003,
+              longitude: data.longitude + 0.0002,
+            })
+            .eq("id", targetAmbId);
           await supabase
             .from("ambulances")
             .update({
@@ -190,7 +155,7 @@ const ReferralCenter = () => {
           <div className="flex items-center gap-3 mb-2">
             <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
             <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">
-              {myFacility.name}
+              NCGH Emergency Command Center
             </p>
           </div>
           <h1 className="text-4xl font-black text-slate-800 tracking-tighter">
