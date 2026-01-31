@@ -149,7 +149,7 @@ const Charting = () => {
     <div className="p-10 bg-[#F8FAFC] min-h-screen font-sans">
       <div className="mb-10 flex justify-between items-end">
         <div>
-          <h1 className="text-4xl font-black text-slate-800 tracking-tighter italic leading-none">
+          <h1 className="text-4xl font-black text-slate-800 tracking-tighter leading-none">
             Digital Charting
           </h1>
           <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-[0.2em] mt-2">
