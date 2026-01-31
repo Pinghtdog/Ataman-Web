@@ -22,11 +22,11 @@ import {
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 
 const APP_ID = 1673152262;
 const SERVER_SECRET = "a19851b6acec66db9bff65413ffc2c2c";
-const GEMINI_API_KEY = "AIzaSyCtlTyonRSR2lKljLE8yvHA43N4WrdGiZ8";
+const GROQ_API_KEY = "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";
 
 const Telemed = () => {
   const [queue, setQueue] = useState([]);
@@ -49,6 +49,11 @@ const Telemed = () => {
   const videoContainerRef = useRef(null);
   const zpRef = useRef(null);
   const recognitionRef = useRef(null);
+
+  const groq = new Groq({
+    apiKey: GROQ_API_KEY,
+    dangerouslyAllowBrowser: true,
+  });
 
   const fetchData = async () => {
     const { data: qData } = await supabase
@@ -169,19 +174,48 @@ const Telemed = () => {
   };
 
   const handleAISummarize = async () => {
-    if (!transcript) return;
-    setIsGeneratingAI(true);
-    try {
-      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const result = await model.generateContent(
-        `Summarize clinical talk to SOAP: "${transcript}"`,
-      );
-      setNote(result.response.text());
-    } catch (e) {
-      console.error(e);
+    if (!transcript || transcript.trim().length < 10) {
+      return alert("Transcript is too short for a clinical summary.");
     }
-    setIsGeneratingAI(false);
+
+    setIsGeneratingAI(true);
+
+    try {
+      const chatCompletion = await groq.chat.completions.create({
+        // Llama 3.3 70B is as smart as GPT-4 and works great on Groq
+        messages: [
+          {
+            role: "system",
+            content: `You are a highly skilled Medical Scribe. 
+          Your task is to take a messy, conversational transcript between a doctor and a patient and organize it into a professional medical SOAP note.
+          
+          RULES:
+          1. Use professional medical terminology.
+          2. Filter out small talk (like 'how is the weather').
+          3. Structure the output clearly as:
+             - SUBJECTIVE: Chief complaint, history of illness, symptoms.
+             - OBJECTIVE: Mentioned vitals, physical findings.
+             - ASSESSMENT: Differential diagnosis or primary concern.
+             - PLAN: Prescriptions, lab tests, and follow-ups.
+          4. If a medication is mentioned, ensure the dosage is noted.`,
+          },
+          {
+            role: "user",
+            content: `Transcript to process: "${transcript}"`,
+          },
+        ],
+        model: "llama-3.3-70b-versatile",
+        temperature: 0.3, // Lower temperature for more factual, medical reporting
+      });
+
+      const aiResponse = chatCompletion.choices[0]?.message?.content || "";
+      setNote(aiResponse);
+    } catch (error) {
+      console.error("Groq AI Error:", error);
+      alert("AI Connection failed. Check your Groq Key.");
+    } finally {
+      setIsGeneratingAI(false);
+    }
   };
 
   const handleViewHistory = async (session) => {
