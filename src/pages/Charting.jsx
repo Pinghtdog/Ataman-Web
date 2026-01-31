@@ -18,11 +18,11 @@ import {
   Save,
   FolderOpen,
   ExternalLink,
+  PlusCircle,
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 const Charting = () => {
-  // Navigation & Search States
   const [searchTerm, setSearchTerm] = useState("");
   const [patient, setPatient] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
@@ -30,8 +30,8 @@ const Charting = () => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingRecent, setLoadingRecent] = useState(true);
-
-  // --- NEW: ROLE & EDIT STATES ---
+  const [documents, setDocuments] = useState([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
   const [userRole, setUserRole] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedPatient, setEditedPatient] = useState({});
@@ -98,7 +98,7 @@ const Charting = () => {
 
   const selectPatient = async (selectedPatient) => {
     setPatient(selectedPatient);
-    setEditedPatient(selectedPatient); // Initialize edit buffer
+    setEditedPatient(selectedPatient);
     setSearchResults([]);
     setIsEditing(false);
 
@@ -115,7 +115,18 @@ const Charting = () => {
       .eq("id", selectedPatient.id);
   };
 
-  // --- NEW: SAVE EDITS LOGIC ---
+  const fetchDocuments = async (patientId) => {
+    setLoadingDocs(true);
+    const { data, error } = await supabase
+      .from("medical_documents")
+      .select("*")
+      .eq("patient_id", patientId)
+      .order("created_at", { ascending: false });
+
+    if (!error) setDocuments(data);
+    setLoadingDocs(false);
+  };
+
   const handleSaveEdits = async () => {
     setIsSaving(true);
     const { error } = await supabase
@@ -255,7 +266,10 @@ const Charting = () => {
                     ID: {patient.philhealth_id || "NOT LINKED"}
                   </p>
                   <button
-                    onClick={() => setShowDocs(true)}
+                    onClick={() => {
+                      setShowDocs(true);
+                      fetchDocuments(patient.id);
+                    }}
                     className="text-[9px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1.5 hover:underline"
                   >
                     <FolderOpen size={12} /> View Digital Attachments
@@ -463,60 +477,83 @@ const Charting = () => {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowDocs(false)}
-                className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-              >
-                <X size={28} />
-              </button>
+              <div className="flex items-center gap-4">
+                {/* Only show Add button if user is authorized to edit */}
+                {(userRole === "DOCTOR" || userRole === "ADMIN") && (
+                  <button
+                    onClick={() =>
+                      alert("Upload logic to Supabase Storage goes here!")
+                    }
+                    className="bg-emerald-50 text-emerald-600 p-2.5 rounded-xl hover:bg-emerald-600 hover:text-white transition-all border border-emerald-100"
+                    title="Upload New Document"
+                  >
+                    <PlusCircle size={20} />
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowDocs(false)}
+                  className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                >
+                  <X size={28} />
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar">
-              {[
-                {
-                  name: "X-Ray Chest PA View",
-                  date: "Jan 15, 2026",
-                  type: "Imaging",
-                },
-                {
-                  name: "Full Blood Count Report",
-                  date: "Jan 12, 2026",
-                  type: "Laboratory",
-                },
-                {
-                  name: "ECG Initial Scan",
-                  date: "Oct 24, 2023",
-                  type: "Diagnostic",
-                },
-              ].map((doc, idx) => (
-                <div
-                  key={idx}
-                  className="p-5 bg-slate-50 rounded-[2rem] border border-slate-100 flex justify-between items-center group hover:bg-white hover:border-blue-400 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-blue-500 transition-colors shadow-sm">
-                      <FileText size={18} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-black text-slate-800 uppercase tracking-tight">
-                        {doc.name}
-                      </p>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                        {doc.type} • {doc.date}
-                      </p>
-                    </div>
-                  </div>
-                  <ExternalLink
-                    size={16}
-                    className="text-slate-300 group-hover:text-blue-500"
+            <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar pr-2">
+              {loadingDocs ? (
+                <div className="py-20 text-center flex flex-col items-center gap-3">
+                  <Loader2
+                    size={32}
+                    className="animate-spin text-blue-500 opacity-20"
                   />
+                  <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                    Querying Storage Node...
+                  </p>
                 </div>
-              ))}
+              ) : documents.length > 0 ? (
+                documents.map((doc) => (
+                  <a
+                    key={doc.id}
+                    href={doc.file_path}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-5 bg-slate-50 rounded-[2rem] border border-slate-100 flex justify-between items-center group hover:bg-white hover:border-blue-400 transition-all cursor-pointer shadow-sm"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-blue-500 transition-colors shadow-sm">
+                        <FileText size={18} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-slate-800 uppercase tracking-tight">
+                          {doc.document_name}
+                        </p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                          {doc.document_type} •{" "}
+                          {new Date(doc.created_at).toLocaleDateString(
+                            "en-US",
+                            { month: "short", day: "numeric", year: "numeric" },
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <ExternalLink
+                      size={16}
+                      className="text-slate-300 group-hover:text-blue-500 transition-transform group-hover:translate-x-1"
+                    />
+                  </a>
+                ))
+              ) : (
+                <div className="py-20 text-center border-2 border-dashed border-slate-100 rounded-[2.5rem]">
+                  <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                    No digital records found
+                  </p>
+                </div>
+              )}
             </div>
 
             <button
               onClick={() => setShowDocs(false)}
-              className="w-full mt-10 py-5 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-3xl shadow-xl active:scale-95 transition-all"
+              className="w-full mt-10 py-5 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-3xl shadow-xl active:scale-95 transition-all border-b-4 border-slate-950"
             >
               Close Storage Node
             </button>

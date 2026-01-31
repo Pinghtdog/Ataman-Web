@@ -301,7 +301,7 @@ const ReferralCenter = () => {
       </div>
 
       {/* TACTICAL DEMO CONTROLS */}
-      <div className="fixed bottom-10 right-10 flex flex-col gap-3">
+      {/* <div className="fixed bottom-10 right-10 flex flex-col gap-3">
         <button
           onClick={resetSimulation}
           className="bg-slate-800/90 backdrop-blur-md text-white px-6 py-3 rounded-2xl text-[9px] font-black uppercase tracking-[0.3em] hover:bg-slate-900 transition-all shadow-xl"
@@ -318,7 +318,7 @@ const ReferralCenter = () => {
         >
           {isSimulating ? "INTERRUPT SIMULATOR" : "START DRIVER DEMO"}
         </button>
-      </div>
+      </div> */}
 
       {/* MODAL */}
       {selectedReferral && (
