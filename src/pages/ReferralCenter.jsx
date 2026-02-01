@@ -232,26 +232,6 @@ const ReferralCenter = () => {
       ))}
     </div>
 
-    {/* TACTICAL DEMO CONTROLS */}
-    <div className="fixed bottom-10 right-10 flex flex-col gap-3">
-      <button 
-        onClick={resetSimulation} 
-        className="bg-slate-800/90 backdrop-blur-md text-white px-6 py-3 rounded-2xl text-[9px] font-black uppercase tracking-[0.3em] hover:bg-slate-900 transition-all shadow-xl"
-      >
-        Reset Coordinates
-      </button>
-      <button 
-        onClick={toggleSimulation} 
-        className={`px-8 py-6 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.2)] font-black text-[11px] text-white uppercase tracking-[0.3em] transition-all transform hover:scale-105 active:scale-95 border-b-4 ${
-          isSimulating 
-            ? 'bg-rose-600 border-rose-800 animate-pulse' 
-            : 'bg-emerald-600 border-emerald-800 hover:bg-emerald-500'
-        }`}
-      >
-        {isSimulating ? "INTERRUPT SIMULATOR" : "START DRIVER DEMO"}
-      </button>
-    </div>
-
     {/* MODAL */}
     {selectedReferral && (
       <ReferralModal 

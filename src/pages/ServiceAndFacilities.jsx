@@ -9,30 +9,36 @@ const ServiceAndFacilities = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeSubCat, setActiveSubCat] = useState('All');
+  
+  // Assigning State
   const [isAssigning, setIsAssigning] = useState(null); 
   const [patientSearch, setPatientSearch] = useState('');
   const [patientResults, setPatientResults] = useState([]);
+  
+  // Edit/Update State
+  const [editingItem, setEditingItem] = useState(null);
+  const [editForm, setEditForm] = useState({ total_capacity: 0, current_occupied: 0 });
+
   const [tick, setTick] = useState(0);
   
   const supplyChainRef = useRef(null);
   const facilityId = 1;
 
   const calculateDuration = (startTime) => {
-  if (!startTime) return '---';
-  const start = new Date(startTime);
-  const now = new Date();
-  const diffInMs = now - start;
-  const diffInMins = Math.floor(diffInMs / (1000 * 60));
-  
-  if (diffInMins < 1) return '< 1m'; // Shows immediate feedback
-  
-  if (diffInMins >= 60) {
-    const hours = Math.floor(diffInMins / 60);
-    const mins = diffInMins % 60;
-    return `${hours}h ${mins}m`;
-  }
-  return `${diffInMins}m`;
-};
+    if (!startTime) return '---';
+    const start = new Date(startTime);
+    const now = new Date();
+    const diffInMs = now - start;
+    const diffInMins = Math.floor(diffInMs / (1000 * 60));
+    
+    if (diffInMins < 1) return '< 1m'; 
+    if (diffInMins >= 60) {
+      const hours = Math.floor(diffInMins / 60);
+      const mins = diffInMins % 60;
+      return `${hours}h ${mins}m`;
+    }
+    return `${diffInMins}m`;
+  };
 
   const searchPatients = async (term) => {
     setPatientSearch(term);
@@ -58,9 +64,12 @@ const ServiceAndFacilities = () => {
       }]);
 
     if (!error) {
+      // Also increment occupied count
+      await supabase.rpc('increment_resource_usage', { row_id: resourceId }); // Optional: if you use RPC, otherwise update manually
+      
       setIsAssigning(null);
       setPatientSearch('');
-      fetchData(); // Trigger UI refresh
+      fetchData(); 
     } else {
       console.error("Assignment Failed:", error.message);
     }
@@ -83,6 +92,46 @@ const ServiceAndFacilities = () => {
     }
   };
 
+  // --- NEW: EDIT/UPDATE HANDLERS ---
+  const handleEditClick = (item) => {
+    setEditingItem(item);
+    setEditForm({
+      total_capacity: item.total_capacity,
+      current_occupied: item.current_occupied || 0
+    });
+  };
+
+  const handleSaveUpdate = async () => {
+    if (!editingItem) return;
+
+    // Calculate dynamic status based on stock levels
+    let newStatus = 'AVAILABLE';
+    const usageRatio = editForm.current_occupied / editForm.total_capacity;
+
+    if (editForm.current_occupied >= editForm.total_capacity) {
+      newStatus = 'OUT OF STOCK';
+    } else if (usageRatio >= 0.8) {
+      newStatus = 'CRITICAL';
+    }
+
+    const { error } = await supabase
+      .from('facility_resources')
+      .update({
+        total_capacity: editForm.total_capacity,
+        current_occupied: editForm.current_occupied,
+        status: newStatus
+      })
+      .eq('id', editingItem.id);
+
+    if (error) {
+      alert("Update failed: " + error.message);
+    } else {
+      setEditingItem(null);
+      fetchData();
+    }
+  };
+  // ---------------------------------
+
   const fetchData = async () => {
     const { data: resData } = await supabase
       .from('facility_resources')
@@ -92,15 +141,13 @@ const ServiceAndFacilities = () => {
 
       const { data: occupantData } = await supabase
         .from('resource_assignments')
-        .select('resource_id, user_id, assigned_at, users(first_name, last_name, medical_id)') // Added assigned_at
+        .select('resource_id, user_id, assigned_at, users(first_name, last_name, medical_id)')
         .eq('facility_id', facilityId);
 
       const occupantMap = (occupantData || []).reduce((acc, curr) => {
-        // Add this guard: only add to map if the user actually exists
         if (curr.users) {
           acc[curr.resource_id] = {
             user_id: curr.user_id,
-            // Use optional chaining (?.) just to be ultra-safe
             name: `${curr.users?.first_name || 'Unknown'} ${curr.users?.last_name || 'Patient'}`,
             medical_id: curr.users?.medical_id || 'N/A',
             assigned_at: curr.assigned_at 
@@ -153,28 +200,38 @@ const ServiceAndFacilities = () => {
   }, []);
 
   useEffect(() => {
-  const timerInterval = setInterval(() => {
-    setTick(prev => prev + 1);
-  }, 60000); 
-
-  return () => clearInterval(timerInterval); 
-}, []);
+    const timerInterval = setInterval(() => {
+      setTick(prev => prev + 1);
+    }, 60000); 
+    return () => clearInterval(timerInterval); 
+  }, []);
 
   const handleToggleCapacity = async (item) => {
-    const isFull = item.current_occupied >= item.total_capacity;
-    const nextStatus =
-      item.status === 'ONLINE' ? 'OFFLINE' : (isFull ? 'OFFLINE' : 'ONLINE');
+    const currentStatus = (item.status || 'ONLINE').toUpperCase();
+    const nextStatus = currentStatus === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
 
-    await supabase
+    setResources(prev => prev.map(r => 
+      r.id === item.id ? { ...r, status: nextStatus } : r
+    ));
+
+    const { error } = await supabase
       .from('facility_resources')
       .update({ status: nextStatus })
       .eq('id', item.id);
+
+    if (error) {
+      fetchData();
+      alert("Sync failed: " + error.message);
+    }
   };
 
-  // Alias to prevent JSX reference error (NO logic change)
-  const handleToggle = (id, status) => {
+  const handleToggle = (id) => {
     const item = resources.find(r => r.id === id);
-    if (item) handleToggleCapacity(item);
+    if (item) {
+      handleToggleCapacity(item);
+    } else {
+      console.error("❌ ID Mismatch: Could not find resource with UUID:", id);
+    }
   };
 
   const clearFilters = () => {
@@ -206,12 +263,7 @@ const ServiceAndFacilities = () => {
   });
 
   const subCategories = [
-    'All',
-    'Medications',
-    'PPE',
-    'First Aid',
-    'Nutritional',
-    'Sanitation'
+    'All', 'Medications', 'PPE', 'First Aid', 'Nutritional', 'Sanitation'
   ];
 
   if (loading) {
@@ -222,19 +274,62 @@ const ServiceAndFacilities = () => {
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600" />
         </div>
         <div className="space-y-2 text-center">
-          <h2 className="text-lg font-bold tracking-tight">
-            Syncing Services and Facilities...
-          </h2>
-          <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
-            Ataman Security Protocol Active
-          </p>
+          <h2 className="text-lg font-bold tracking-tight">Syncing Services and Facilities...</h2>
+          <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">Ataman Security Protocol Active</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden font-sans relative">
+      
+      {/* --- UPDATE MODAL --- */}
+      {editingItem && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white p-6 rounded-3xl w-96 shadow-2xl border border-slate-200">
+            <h3 className="text-sm font-black text-slate-800 uppercase mb-1">{editingItem.resource_type}</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Update Inventory Levels</p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Total Capacity (Stock)</label>
+                <input 
+                  type="number" 
+                  value={editForm.total_capacity}
+                  onChange={(e) => setEditForm({...editForm, total_capacity: parseInt(e.target.value) || 0})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-800 focus:border-emerald-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Current Usage / Reserved</label>
+                <input 
+                  type="number" 
+                  value={editForm.current_occupied}
+                  onChange={(e) => setEditForm({...editForm, current_occupied: parseInt(e.target.value) || 0})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-800 focus:border-emerald-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button 
+                onClick={() => setEditingItem(null)}
+                className="flex-1 py-3 rounded-xl bg-slate-100 text-[10px] font-black uppercase text-slate-500 hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveUpdate}
+                className="flex-1 py-3 rounded-xl bg-emerald-600 text-[10px] font-black uppercase text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200"
+              >
+                Confirm Update
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <span className="bg-emerald-600 text-white text-[10px] px-2 py-1 rounded font-black tracking-tighter shadow-sm">NCGH LOGISTICS</span>
@@ -325,121 +420,130 @@ const ServiceAndFacilities = () => {
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {equipment.map(item => {
-  const occupant = activeOccupants[item.id];
-  const isOccupied = !!occupant;
-  const isMaintenance = item.status === 'OFFLINE';
+                const occupant = activeOccupants[item.id];
+                const isOccupied = !!occupant;
+                const isMaintenance = item.status?.toUpperCase() === 'OFFLINE';
 
-  return (
-    <div key={item.id} className={`p-5 rounded-[2rem] border transition-all ${
-      isMaintenance ? 'bg-slate-50 border-slate-200 opacity-75' : 
-      isOccupied ? 'bg-white border-rose-100 shadow-sm' : 'bg-white border-emerald-100 shadow-sm'
-    }`}>
-      {/* TOP SECTION: UNIT INFO & ACTIONS */}
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <div className={`w-3 h-3 rounded-full ${
-            isMaintenance ? 'bg-slate-400' : 
-            isOccupied ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]' : 
-            'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]'
-          }`} />
-          
-          <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">{item.resource_type}</h4>
-              <span className="text-[10px] bg-slate-900 text-white px-2 py-0.5 rounded-md font-black italic">
-                {item.unit_label || 'UNIT-A'}
-              </span>
-            </div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-              {isMaintenance ? 'Under Maintenance' : isOccupied ? `User: ${occupant.name}` : 'Ready for Patient'}
-            </p>
-          </div>
-        </div>
+                return (
+                  <div key={item.id} className={`p-5 rounded-[2rem] border transition-all ${
+                    isMaintenance ? 'bg-slate-50 border-slate-200' : 
+                    isOccupied ? 'bg-white border-rose-100 shadow-sm' : 'bg-white border-emerald-100 shadow-sm'
+                  }`}>
+                    {/* TOP SECTION: UNIT INFO & ACTIONS */}
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-3 h-3 rounded-full ${
+                          isMaintenance ? 'bg-slate-400' : 
+                          isOccupied ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]' : 
+                          'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                        }`} />
+                        
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className={`text-sm font-black uppercase tracking-tight ${isMaintenance ? 'text-slate-400 line-through decoration-2' : 'text-slate-800'}`}>{item.resource_type}</h4>
+                            <span className="text-[10px] bg-slate-900 text-white px-2 py-0.5 rounded-md font-black italic">
+                              {item.unit_label || 'UNIT-A'}
+                            </span>
+                          </div>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${isMaintenance ? 'text-rose-400' : 'text-slate-400'}`}>
+                            {isMaintenance ? '⚠️ Under Maintenance' : isOccupied ? `User: ${occupant.name}` : 'Ready for Patient'}
+                          </p>
+                        </div>
+                      </div>
 
-        <div className="flex items-center gap-2">
-          {!isMaintenance && !isOccupied && (
-            <button 
-              onClick={() => setIsAssigning(item.id)}
-              className="bg-emerald-600 text-white text-[10px] font-black px-5 py-2 rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
-            >
-              USE UNIT
-            </button>
-          )}
+                      <div className="flex items-center gap-2">
+                        {!isMaintenance && !isOccupied && (
+                          <button 
+                            onClick={() => setIsAssigning(item.id)}
+                            className="bg-emerald-600 text-white text-[10px] font-black px-5 py-2 rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
+                          >
+                            USE UNIT
+                          </button>
+                        )}
 
-          {isOccupied && (
-            <button 
-              onClick={() => handleRelease(occupant.user_id, item.id)}
-              className="bg-rose-50 text-rose-600 border border-rose-100 text-[10px] font-black px-5 py-2 rounded-xl hover:bg-rose-600 hover:text-white transition-all active:scale-95"
-            >
-              DONE
-            </button>
-          )}
+                        {isOccupied && (
+                          <button 
+                            onClick={() => handleRelease(occupant.user_id, item.id)}
+                            className="bg-rose-50 text-rose-600 border border-rose-100 text-[10px] font-black px-5 py-2 rounded-xl hover:bg-rose-600 hover:text-white transition-all active:scale-95"
+                          >
+                            DONE
+                          </button>
+                        )}
 
-          <button 
-            onClick={() => handleToggle(item.id, item.status)}
-            className={`p-2 rounded-xl border transition-all ${
-              isMaintenance ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-800 hover:text-slate-800'
-            }`}
-          >
-            🔧
-          </button>
-        </div>
-      </div>
+                        <div className="relative group">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation(); 
+                              handleToggle(item.id);
+                            }}
+                            className={`p-2 rounded-xl border z-20 transition-all ${
+                              isMaintenance ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-800 hover:text-slate-800'
+                            }`}
+                          >
+                            🔧
+                          </button>
+                          {/* TOOLTIP FOR MAINTENANCE */}
+                          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-slate-800 text-white text-[9px] font-bold py-1 px-2 rounded whitespace-nowrap z-10">
+                            {isMaintenance ? 'Set to Available' : 'Set Maintenance'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
-      {/* BOTTOM SECTION: PATIENT DATA & TIMER (HORIZONTAL LAYOUT) */}
-      {isOccupied && !isMaintenance && (
-        <div className="mt-4 pt-3 border-t border-slate-50 flex justify-between items-center animate-in fade-in slide-in-from-top-1">
-          <div className="flex items-center gap-3">
-            <div className="flex flex-col">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Medical ID</span>
-              <span className="text-[10px] font-bold text-slate-700 tracking-tight">{occupant.medical_id}</span>
-            </div>
-          </div>
+                    {/* BOTTOM SECTION: PATIENT DATA & TIMER */}
+                    {isOccupied && !isMaintenance && (
+                      <div className="mt-4 pt-3 border-t border-slate-50 flex justify-between items-center animate-in fade-in slide-in-from-top-1">
+                        <div className="flex items-center gap-3">
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Medical ID</span>
+                            <span className="text-[10px] font-bold text-slate-700 tracking-tight">{occupant.medical_id}</span>
+                          </div>
+                        </div>
 
-          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl">
-             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-             <span className="text-[10px] font-black text-emerald-700 uppercase tracking-tighter">
-               Active: {calculateDuration(occupant.assigned_at)}
-             </span>
-          </div>
-        </div>
-      )}
+                        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-tighter">
+                              Active: {calculateDuration(occupant.assigned_at)}
+                            </span>
+                        </div>
+                      </div>
+                    )}
 
-      {/* SEARCH OVERLAY */}
-      {isAssigning === item.id && (
-        <div className="mt-4 p-4 bg-slate-100 rounded-2xl animate-in zoom-in duration-200">
-          <p className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.3em] mb-3">
-            Assign Patient to {item.unit_label}
-          </p>
-          <input 
-            autoFocus
-            className="w-full bg-white text-slate-800 p-3 text-xs rounded-xl border border-slate-300 outline-none mb-2 placeholder:text-slate-400"
-            placeholder="Type Name or Medical ID..."
-            value={patientSearch}
-            onChange={(e) => searchPatients(e.target.value)}
-          />
-          <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
-            {patientResults.map(p => (
-              <button 
-                key={p.id}
-                onClick={() => handleAssign(p.id, item.id)}
-                className="w-full text-left p-3 text-[10px] font-black uppercase text-slate-700 bg-slate-200/50 border border-slate-300 rounded-xl hover:bg-emerald-200 hover:text-slate-900 hover:border-emerald-300 transition-all"
-              >
-                {p.first_name} {p.last_name} — {p.medical_id}
-              </button>
-            ))}
-          </div>
-          <button 
-            onClick={() => setIsAssigning(null)} 
-            className="w-full mt-3 text-[9px] font-black text-slate-500 uppercase hover:text-rose-400 transition-colors"
-          >
-            Cancel Search
-          </button>
-        </div>
-      )}
-    </div>
-  );
-})}
+                    {/* SEARCH OVERLAY */}
+                    {isAssigning === item.id && (
+                      <div className="mt-4 p-4 bg-slate-100 rounded-2xl animate-in zoom-in duration-200">
+                        <p className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.3em] mb-3">
+                          Assign Patient to {item.unit_label}
+                        </p>
+                        <input 
+                          autoFocus
+                          className="w-full bg-white text-slate-800 p-3 text-xs rounded-xl border border-slate-300 outline-none mb-2 placeholder:text-slate-400"
+                          placeholder="Type Name or Medical ID..."
+                          value={patientSearch}
+                          onChange={(e) => searchPatients(e.target.value)}
+                        />
+                        <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
+                          {patientResults.map(p => (
+                            <button 
+                              key={p.id}
+                              onClick={() => handleAssign(p.id, item.id)}
+                              className="w-full text-left p-3 text-[10px] font-black uppercase text-slate-700 bg-slate-200/50 border border-slate-300 rounded-xl hover:bg-emerald-200 hover:text-slate-900 hover:border-emerald-300 transition-all"
+                            >
+                              {p.first_name} {p.last_name} — {p.medical_id}
+                            </button>
+                          ))}
+                        </div>
+                        <button 
+                          onClick={() => setIsAssigning(null)} 
+                          className="w-full mt-3 text-[9px] font-black text-slate-500 uppercase hover:text-rose-400 transition-colors"
+                        >
+                          Cancel Search
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -469,13 +573,20 @@ const ServiceAndFacilities = () => {
                     <tr key={item.id} className="group hover:bg-slate-50 transition-colors">
                       <td className="py-4">
                         <p className="text-xs font-black text-slate-800 uppercase leading-none mb-1">{item.resource_type}</p>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter italic">{item.sub_category}</p>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter italic">
+                          {item.sub_category} — Stock: {item.total_capacity} | Used: {item.current_occupied || 0}
+                        </p>
                       </td>
                       <td className="py-4">
                         <span className={`text-[8px] font-black uppercase px-2 py-1 rounded border ${item.status === 'AVAILABLE' ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-rose-600 bg-rose-50 border-rose-100'}`}>{item.status}</span>
                       </td>
                       <td className="py-4 text-right">
-                        <button className="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-4 py-1.5 rounded-lg uppercase hover:bg-emerald-600 hover:text-white transition-all">Update</button>
+                        <button 
+                          onClick={() => handleEditClick(item)}
+                          className="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-4 py-1.5 rounded-lg uppercase hover:bg-emerald-600 hover:text-white transition-all"
+                        >
+                          Update
+                        </button>
                       </td>
                     </tr>
                   ))}

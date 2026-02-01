@@ -39,9 +39,14 @@ const ReferralModal = ({ referral: initialReferral, onClose, onUpdate, isLog, ca
             patient_id,
             reference_number,
             chief_complaint,
-            destination_facility_id,
-            origin_facility_id,
             status,
+            service_stream,
+            referral_slip_url,
+            assigned_department_id,
+            departments (
+              id,
+              name
+            ),
             users!inner (
               id, 
               first_name, 
@@ -53,19 +58,26 @@ const ReferralModal = ({ referral: initialReferral, onClose, onUpdate, isLog, ca
               id,
               bed_label,
               ward_type
-            ),
-            resource_assignments (
-              resource_id,
-              facility_resources (
-                resource_type,
-                unit_label
-              )
             )
-          `)
+          `) 
           .eq('id', initialReferral.id)
           .single();
 
-        if (!refError && enrichedRef) setReferral(enrichedRef);
+        if (refError) throw refError;
+
+        const pid = enrichedRef.patient_id || enrichedRef.users?.id || initialReferral.patient_id;
+
+        const { data: assignments } = await supabase
+            .from('resource_assignments')
+            .select(`
+              resource_id,
+              facility_resources (
+                resource_type,
+                unit_label)
+            `)
+            .eq('user_id', pid)
+          
+        setReferral({ ...enrichedRef, resource_assignments: assignments || [] });
 
         const { data: { user } } = await supabase.auth.getUser();
         const { data: staffRecord } = await supabase
@@ -77,7 +89,6 @@ const ReferralModal = ({ referral: initialReferral, onClose, onUpdate, isLog, ca
         const fid = staffRecord.facility_id;
         setFacilityId(fid);
 
-        // FETCH ALL DATA AT ONCE
         const [facRes, diagRes, origRes, bedsRes, deptRes] = await Promise.all([
           supabase.from('facilities').select('name').eq('id', fid).single(),
           supabase.from('facility_resources').select('*').eq('resource_category', 'equipment').eq('facility_id', fid),
@@ -86,8 +97,7 @@ const ReferralModal = ({ referral: initialReferral, onClose, onUpdate, isLog, ca
           supabase.from('departments').select('id, name').eq('facility_id', fid)
         ]);
 
-        // UPDATE STATES
-        setDepartments(deptRes.data || []); // FIXED: Moved inside try block
+        setDepartments(deptRes.data || []); 
         setFacilityData(facRes.data);
         setDiagnostics(diagRes.data || []);
         setOriginHospital(origRes.data);
@@ -130,24 +140,13 @@ const ReferralModal = ({ referral: initialReferral, onClose, onUpdate, isLog, ca
 
 const handleFinalize = async () => {
   setIsProcessing(true);
-
-  console.log("Full Referral Object:", referral);
-  console.log("Initial Referral Prop:", initialReferral);
   try {
     const normalizedStream = serviceStream.toUpperCase();
 
-    // Priority: 1. Main patient_id, 2. Joined User ID, 3. The initial prop ID
-const targetPatientId = 
-  referral?.patient_id ||              // Direct column
-  referral?.users?.id ||               // Joined object (standard for .single())
-  referral?.users?.[0]?.id ||          // Joined array (fallback)
-  initialReferral?.patient_id;         // Prop fallback
-    console.log("Resolved Patient ID:", targetPatientId);
-
-      if (!targetPatientId) {
-        console.error("❌ ID RESOLUTION FAILED. Check the console logs above.");
-        throw new Error("Critical Failure: Patient ID could not be resolved.");
-      }
+    const targetPatientId = 
+    referral?.patient_id ||      // The direct UUID column in referrals
+    referral?.users?.id ||       // The UUID from the joined users table
+    initialReferral?.patient_id; // Fallback from props
 
     if (!facilityId) throw new Error("Staff facility ID missing.");
 
@@ -180,6 +179,7 @@ const targetPatientId =
           status: 'ACCEPTED',
           service_stream: normalizedStream,
           assigned_bed_id: normalizedStream === 'INPATIENT' ? selectedBed : null,
+          assigned_department_id: normalizedStream === 'OUTPATIENT' ? selectedWard : null,  
           destination_facility_id: facilityId 
         })
         .eq('id', referral.id);
@@ -209,14 +209,57 @@ const targetPatientId =
     }
   };
 
-  const handleDownload = () => {
-    const content = `Referral Slip: ${referral.reference_number}\nPatient: ${referral.users?.first_name} ${referral.users?.last_name}`;
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Referral_${referral.reference_number}.txt`;
-    link.click();
+  const handleDownload = async () => {
+    try {
+      // SCENARIO 1: The Referral has an actual PDF URL from Supabase
+      if (referral.referral_slip_url) {
+        const fileName = `Referral_${referral.reference_number}.pdf`;
+        
+        // Fetch the file as a blob to force a download (rather than just opening a tab)
+        const response = await fetch(referral.referral_slip_url);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+        return;
+      }
+
+      // SCENARIO 2: Fallback - No PDF found, generate a text summary
+      console.warn("No PDF URL found. Generating text summary instead.");
+      
+      const content = `
+        CLINICAL REFERRAL SLIP
+        ----------------------
+        Reference: ${referral.reference_number}
+        Patient: ${referral.users?.first_name} ${referral.users?.last_name}
+        Medical ID: ${referral.users?.medical_id}
+        Chief Complaint: ${referral.chief_complaint}
+        Status: ${referral.status}
+        Stream: ${referral.service_stream || 'N/A'}
+        Date: ${new Date().toLocaleString()}
+      `.trim();
+
+      const textBlob = new Blob([content], { type: 'text/plain' });
+      const textUrl = URL.createObjectURL(textBlob);
+      const textLink = document.createElement('a');
+      
+      textLink.href = textUrl;
+      textLink.download = `Summary_${referral.reference_number}.txt`;
+      textLink.click();
+      
+      URL.revokeObjectURL(textUrl);
+
+    } catch (err) {
+      console.error("Download failed:", err);
+      alert("Could not download the file. Please check your connection.");
+    }
   };
 
   if (isLoading) {
@@ -236,6 +279,8 @@ const targetPatientId =
       
       {/* LEFT PANEL: MAP / DOCUMENTS */}
       <div className="w-[45%] relative bg-slate-50 border-r border-slate-100 overflow-hidden">
+        
+        {/* VIEW 1: MAP VIEW */}
         <div className={`absolute inset-0 transition-all duration-500 ${leftPanelView === 'map' ? 'opacity-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
           <Map height={650} center={HOSPITAL_LOCATION} defaultZoom={14}>
             <Marker width={35} anchor={HOSPITAL_LOCATION} color="#0D9488" />
@@ -246,27 +291,58 @@ const targetPatientId =
           <div className="absolute bottom-6 left-6 right-6 bg-white/95 p-5 rounded-[2rem] shadow-xl border border-slate-100 backdrop-blur-md">
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-2">Live Transit Status</p>
             <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">{originHospital?.name || 'Referring Facility'}</h4>
-            <p className="text-[10px] text-primary font-black mt-1 uppercase tracking-tighter italic">ETA: {calculateETA(referral.ambulances?.latitude, referral.ambulances?.longitude)}</p>
+            <p className="text-[10px] text-primary font-black mt-1 uppercase tracking-tighter italic">
+              ETA: {calculateETA(referral.ambulances?.latitude, referral.ambulances?.longitude)}
+            </p>
           </div>
         </div>
 
+        {/* VIEW 2: PDF ATTACHMENT VIEW */}
         <div className={`absolute inset-0 bg-slate-100 transition-all duration-500 flex flex-col ${leftPanelView === 'attachment' ? 'opacity-100' : 'opacity-0 translate-y-full'}`}>
-          <div className="p-4 bg-white border-b flex justify-between items-center shadow-sm">
-            <span className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Referral_Slip_Digital.pdf</span>
+          {/* PDF Header / Controls */}
+          <div className="p-4 bg-white/80 backdrop-blur-md border-b flex justify-between items-center shadow-sm z-10">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-rose-100 text-rose-600 rounded-lg flex items-center justify-center font-black text-xs">PDF</div>
+              <span className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">
+                {referral.reference_number}_Slip.pdf
+              </span>
+            </div>
             <div className="flex gap-2">
-              <button onClick={handleDownload} className="bg-primary/10 text-primary px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-tight hover:bg-primary/20 transition">Download</button>
-              <button onClick={() => setLeftPanelView('map')} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">Close File</button>
+              <button 
+                onClick={handleDownload} 
+                className="bg-primary/10 text-primary px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-tight hover:bg-primary/20 transition active:scale-95"
+              >
+                Download
+              </button>
+              <button 
+                onClick={() => setLeftPanelView('map')} 
+                className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition active:scale-95"
+              >
+                Close File
+              </button>
             </div>
           </div>
-          <div className="flex-1 p-8 flex justify-center bg-slate-200/50">
-            <div className="w-full bg-white shadow-xl p-10 min-h-[500px] rounded-[1.5rem] flex flex-col items-center">
-              <div className="w-full border-b-2 border-slate-800 pb-4 mb-8 text-center font-serif text-xl font-black uppercase italic tracking-tighter">Clinical Referral Slip</div>
-              <div className="w-full space-y-4 opacity-30">
-                <div className="h-4 bg-slate-200 w-3/4 rounded-full"></div>
-                <div className="h-4 bg-slate-200 w-full rounded-full"></div>
-                <div className="h-24 bg-slate-50 w-full rounded-xl border-2 border-dashed border-slate-100 flex items-center justify-center font-black text-[10px] uppercase tracking-widest italic">Vitals & Case History</div>
+
+          {/* Actual PDF Viewer */}
+          <div className="flex-1 p-4 bg-slate-200/50 relative">
+            {referral.referral_slip_url ? (
+              <div className="w-full h-full rounded-2xl overflow-hidden shadow-2xl border border-slate-300 bg-white">
+                <iframe
+                  src={`${referral.referral_slip_url}#toolbar=0&navpanes=0`}
+                  className="w-full h-full border-none"
+                  title="Clinical Referral Slip"
+                />
               </div>
-            </div>
+            ) : (
+              /* Fallback if no URL exists */
+              <div className="w-full h-full bg-white shadow-inner rounded-[2.5rem] flex flex-col items-center justify-center p-12 text-center border-4 border-dashed border-slate-200">
+                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6 text-4xl">📄</div>
+                <h3 className="text-slate-800 font-black uppercase tracking-tighter text-lg">No Digital Slip Found</h3>
+                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2 max-w-[200px]">
+                  The referring facility has not uploaded a digital copy of this slip.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -328,84 +404,97 @@ const targetPatientId =
           </div>
 
           {/* MAIN VIEW LOGIC */}
-{isLog ? (
-  // AUDIT VIEW LOGIC
-  <div className="space-y-4 animate-in fade-in duration-500">
-    <div className="p-8 bg-white text-slate-700 rounded-[2.5rem] text-[11px] leading-relaxed border border-slate-100 shadow-sm">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-        <p className="uppercase text-[10px] font-black text-slate-400 tracking-[0.25em]">
-          Clinical Decision Archive
-        </p>
-      </div>
+          {isLog ? (
+            <div className="space-y-4 animate-in fade-in duration-500">
+              <div className="p-8 bg-white text-slate-700 rounded-[2.5rem] text-[11px] leading-relaxed border border-slate-100 shadow-sm">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <p className="uppercase text-[10px] font-black text-slate-400 tracking-[0.25em]">
+                    Clinical Decision Archive
+                  </p>
+                </div>
 
-      <div className="space-y-4">
-        <div className="flex justify-between items-center border-b border-slate-100 pb-3 uppercase">
-          <span className="text-slate-400 tracking-widest font-black text-[9px]">Disposition</span>
-          <b className="text-emerald-600 font-black text-xs tracking-tight bg-emerald-50 px-3 py-1 rounded-lg">
-            {referral.status}
-          </b>
-        </div>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3 uppercase">
+                    <span className="text-slate-400 tracking-widest font-black text-[9px]">Disposition</span>
+                    <b className="text-emerald-600 font-black text-xs tracking-tight bg-emerald-50 px-3 py-1 rounded-lg">
+                      {referral.status}
+                    </b>
+                  </div>
 
-        <div className="flex justify-between items-center border-b border-slate-100 pb-3 uppercase">
-          <span className="text-slate-400 tracking-widest font-black text-[9px]">Service Stream</span>
-          <b className="text-slate-800 font-black text-xs tracking-tight">
-            {referral.service_stream || "N/A"}
-          </b>
-        </div>
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3 uppercase">
+                    <span className="text-slate-400 tracking-widest font-black text-[9px]">Service Stream</span>
+                    <b className="text-slate-800 font-black text-xs tracking-tight">
+                      {referral.service_stream || initialReferral.service_stream || "N/A"}
+                    </b>
+                  </div>
 
-        <div className="flex justify-between items-center border-b border-slate-100 pb-3 uppercase">
-          <span className="text-slate-400 tracking-widest font-black text-[9px]">Assigned Unit</span>
-          <b className="text-slate-800 font-black text-xs tracking-tight">
-          {/* 1. Check if assigned to Equipment (Diagnostic) */}
-          {referral.resource_assignments?.length > 0 ? (
-            `${referral.resource_assignments[0].facility_resources.resource_type} [${referral.resource_assignments[0].facility_resources.unit_label}]`
-          ) :
-          /* 2. Check if assigned to a Bed (Inpatient) */
-          referral.beds ? (
-          `${referral.beds.ward_type} — ${referral.beds.bed_label}`) 
-          : "Not Assigned"}
-        </b>
-        </div>
-      </div>
-    </div>
-  </div>
-) : (
-  // DISPOSITION SELECTOR
-  <div className="space-y-6">
-    {view === 'details' ? (
-      <div className="flex gap-4">
-        <button
-          onClick={() => setView('accept')}
-          className="flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-[10px] uppercase tracking-widest shadow-xl shadow-emerald-200 hover:scale-[1.02] active:scale-95 transition-all"
-        >
-          Accept Case
-        </button>
-        <button
-          onClick={handleDivert}
-          className="flex-1 border-2 border-rose-200 text-rose-500 py-5 rounded-[2rem] font-black text-[10px] uppercase tracking-widest hover:bg-rose-50 hover:border-rose-400 transition-all"
-        >
-          Divert Patient
-        </button>
-      </div>
-    ) : (
-      <div className="space-y-5 animate-in slide-in-from-bottom-2 duration-300">
-        {/* STREAM TOGGLE */}
-        <div className="grid grid-cols-3 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-          {['OUTPATIENT', 'DIAGNOSTIC', 'INPATIENT'].map((s) => (
-            <button
-              key={s}
-              onClick={() => { setServiceStream(s); setSelectedWard(''); setSelectedBed(''); }}
-              className={`py-3 rounded-xl text-[9px] font-black uppercase transition-all ${
-                serviceStream === s
-                  ? 'bg-white text-emerald-600 shadow-sm border border-slate-200 scale-100'
-                  : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3 uppercase">
+                    <span className="text-slate-400 tracking-widest font-black text-[9px]">Assigned Unit</span>
+                    <b className="text-slate-800 font-black text-xs tracking-tight">
+                      {(() => {
+                        const stream = referral.service_stream;
+
+                        // 1. OUTPATIENT: Show joined department name
+                        if (stream === 'OUTPATIENT') {
+                          return referral.departments?.name || "General Consultation";
+                        }
+
+                        // 2. DIAGNOSTIC: Clean format (Name - Unit)
+                        if (stream === 'DIAGNOSTIC') {
+                          const res = referral.resource_assignments?.[0]?.facility_resources;
+                          if (!res) return "Resource Assigned";
+                          return res.unit_label ? `${res.resource_type} — ${res.unit_label}` : res.resource_type;
+                        }
+
+                        // 3. INPATIENT: Ward and Bed
+                        if (stream === 'INPATIENT' && referral.beds) {
+                          return `${referral.beds.ward_type} — ${referral.beds.bed_label}`;
+                        }
+
+                        return "Not Assigned";
+                      })()}
+                    </b>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            // DISPOSITION SELECTOR
+            <div className="space-y-6">
+              {view === 'details' ? (
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setView('accept')}
+                    className="flex-1 bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-[10px] uppercase tracking-widest shadow-xl shadow-emerald-200 hover:scale-[1.02] active:scale-95 transition-all"
+                  >
+                    Accept Case
+                  </button>
+                  <button
+                    onClick={handleDivert}
+                    className="flex-1 border-2 border-rose-200 text-rose-500 py-5 rounded-[2rem] font-black text-[10px] uppercase tracking-widest hover:bg-rose-50 hover:border-rose-400 transition-all"
+                  >
+                    Divert Patient
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-5 animate-in slide-in-from-bottom-2 duration-300">
+                  {/* STREAM TOGGLE */}
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+                    {['OUTPATIENT', 'DIAGNOSTIC', 'INPATIENT'].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => { setServiceStream(s); setSelectedWard(''); setSelectedBed(''); }}
+                        className={`py-3 rounded-xl text-[9px] font-black uppercase transition-all ${
+                          serviceStream === s
+                            ? 'bg-white text-emerald-600 shadow-sm border border-slate-200 scale-100'
+                            : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
 
         {/* TARGET UNIT SELECTOR */}
         <div className="relative group">
@@ -436,7 +525,7 @@ const targetPatientId =
                   );
                 })
               : ( departments.map((dept) => (
-                <option key={dept.id} value={dept.name}>
+                <option key={dept.id} value={dept.id}>
                   {dept.name.toUpperCase()} DEPARTMENT
                 </option>
               ))
