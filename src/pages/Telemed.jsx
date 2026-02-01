@@ -214,7 +214,7 @@ const Telemed = () => {
       console.error("Groq AI Error:", error);
       alert("AI Connection failed. Check your Groq Key.");
     } finally {
-      setIsGeneratingAI(false);
+    setIsGeneratingAI(false);
     }
   };
 
