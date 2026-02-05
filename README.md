@@ -62,15 +62,15 @@ To run the project locally, follow these steps.
     # .env.local
 
     # Supabase Credentials
-    VITE_SUPABASE_URL="YOUR_SUPABASE_URL"
-    VITE_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
+    VITE_SUPABASE_URL= Please ask developers
+    VITE_SUPABASE_ANON_KEY= Please ask developers
 
     # ZegoCloud Credentials for Telemedicine
-    VITE_ZEGOCLOUD_APP_ID="YOUR_ZEGOCLOUD_APP_ID"
-    VITE_ZEGOCLOUD_SERVER_SECRET="YOUR_ZEGOCLOUD_SERVER_SECRET"
+    VITE_ZEGOCLOUD_APP_ID= Please ask developers
+    VITE_ZEGOCLOUD_SERVER_SECRET= Please ask developers
 
     # Groq API Key for AI note summarization
-    VITE_GROQ_API_KEY="YOUR_GROQ_API_KEY"
+    VITE_GROQ_API_KEY= Please ask developers
     ```
 
 4.  **Run the development server:**
