@@ -21,7 +21,7 @@ import {
 import { supabase } from "../supabaseClient";
 import Groq from "groq-sdk";
 
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY_ASSISTED_BOOKING;
+const GROQ_API_KEY = "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";
 const groq = new Groq({ apiKey: GROQ_API_KEY, dangerouslyAllowBrowser: true });
 
 const AssistedBooking = () => {

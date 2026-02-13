@@ -34,7 +34,7 @@ import { supabase } from "../supabaseClient";
 import { Scanner } from "@yudiel/react-qr-scanner";
 import Groq from "groq-sdk";
 
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY_CHARTING;
+const GROQ_API_KEY = "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";
 const groq = new Groq({ apiKey: GROQ_API_KEY, dangerouslyAllowBrowser: true });
 
 const Charting = () => {

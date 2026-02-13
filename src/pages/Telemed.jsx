@@ -28,7 +28,7 @@ import Groq from "groq-sdk";
 
 const APP_ID = 1673152262;
 const SERVER_SECRET = "a19851b6acec66db9bff65413ffc2c2c";
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY_TELEMEDICINE;
+const GROQ_API_KEY = "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";
 
 const Telemed = () => {
   const [queue, setQueue] = useState([]);
