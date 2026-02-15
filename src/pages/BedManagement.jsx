@@ -59,6 +59,7 @@ const BedManagement = () => {
 
   useEffect(() => {
     fetchData();
+    document.title = "Bed Management | ATAMAN Health";
     const channel = supabase
       .channel("beds-mgmt")
       .on(

@@ -49,6 +49,7 @@ const Telemed = () => {
   const videoContainerRef = useRef(null);
   const zpRef = useRef(null);
   const recognitionRef = useRef(null);
+  const [triageData, setTriageData] = useState(null);
 
   const groq = new Groq({
     apiKey: GROQ_API_KEY,
@@ -78,7 +79,27 @@ const Telemed = () => {
     setLoading(false);
   };
 
+  // Function to fetch the latest triage result
+  const fetchTriage = async (patientId) => {
+    if (!patientId) return;
+    
+    const { data, error } = await supabase
+      .from('triage_results')
+      .select('*')
+      .eq('user_id', patientId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!error && data) {
+      setTriageData(data);
+    } else {
+      setTriageData(null);
+    }
+  };
+
   useEffect(() => {
+    document.title = "Telemed | ATAMAN Health";
     fetchData();
     const channel = supabase
       .channel("telemed-sync")
@@ -108,25 +129,31 @@ const Telemed = () => {
   }, []);
 
   useEffect(() => {
-    if (activeSession && videoContainerRef.current && !zpRef.current) {
-      const initZego = async () => {
-        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
-          APP_ID,
-          SERVER_SECRET,
-          activeSession.meeting_link,
-          "staff-node-01",
-          "Dr. Staff",
-        );
-        const zp = ZegoUIKitPrebuilt.create(kitToken);
-        zpRef.current = zp;
-        zp.joinRoom({
-          container: videoContainerRef.current,
-          scenario: { mode: ZegoUIKitPrebuilt.OneONoneCall },
-          showPreJoinView: false,
-          onLeaveRoom: () => handleEndCall(),
-        });
-      };
-      initZego();
+    if (activeSession) {
+      // 1. Fetch Triage Data IMMEDIATELY when session starts
+      fetchTriage(activeSession.patient.id);
+
+      // 2. Initialize Video
+      if (videoContainerRef.current && !zpRef.current) {
+        const initZego = async () => {
+          const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+            APP_ID,
+            SERVER_SECRET,
+            activeSession.meeting_link,
+            "staff-node-01",
+            "Dr. Staff",
+          );
+          const zp = ZegoUIKitPrebuilt.create(kitToken);
+          zpRef.current = zp;
+          zp.joinRoom({
+            container: videoContainerRef.current,
+            scenario: { mode: ZegoUIKitPrebuilt.OneONoneCall },
+            showPreJoinView: false,
+            onLeaveRoom: () => handleEndCall(),
+          });
+        };
+        initZego();
+      }
     }
   }, [activeSession]);
 
@@ -156,6 +183,7 @@ const Telemed = () => {
         .eq("id", activeSession.id);
     }
     setActiveSession(null);
+    setTriageData(null); // Clear triage data on end call
     setTranscript("");
     setNote("");
     fetchData();
@@ -182,7 +210,6 @@ const Telemed = () => {
 
     try {
       const chatCompletion = await groq.chat.completions.create({
-        // Llama 3.3 70B is as smart as GPT-4 and works great on Groq
         messages: [
           {
             role: "system",
@@ -205,7 +232,7 @@ const Telemed = () => {
           },
         ],
         model: "llama-3.3-70b-versatile",
-        temperature: 0.3, // Lower temperature for more factual, medical reporting
+        temperature: 0.3,
       });
 
       const aiResponse = chatCompletion.choices[0]?.message?.content || "";
@@ -214,7 +241,7 @@ const Telemed = () => {
       console.error("Groq AI Error:", error);
       alert("AI Connection failed. Check your Groq Key.");
     } finally {
-    setIsGeneratingAI(false);
+      setIsGeneratingAI(false);
     }
   };
 
@@ -249,24 +276,18 @@ const Telemed = () => {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
         <div className="relative mb-6 flex items-center justify-center">
-          {/* Subtle Green Pulse */}
           <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75"></div>
-
-          {/* Main Emerald Spinner */}
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"></div>
         </div>
-
         <div className="space-y-2 text-center">
           <h2 className="text-lg font-bold tracking-tight">
             Syncing Consultation Queues..
           </h2>
-
           <div className="flex items-center justify-center gap-2">
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400"></span>
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.2s]"></span>
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.4s]"></span>
           </div>
-
           <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
             Ataman Security Protocol Active
           </p>
@@ -287,7 +308,7 @@ const Telemed = () => {
       </div>
 
       <div className="grid grid-cols-12 gap-10">
-        {/* LEFT PANEL: Widened to 4 columns for breathing room */}
+        {/* LEFT PANEL */}
         <div className="col-span-4 space-y-6">
           <div className="relative">
             {activeSession && (
@@ -441,6 +462,62 @@ const Telemed = () => {
               </div>
             )}
           </div>
+
+          {/* --- NEW TRIAGE CARD INSERTED HERE --- */}
+          {activeSession && (
+            <div className={`bg-white p-8 rounded-[1rem] shadow-sm border border-slate-200 relative overflow-hidden transition-all ${triageData ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4 hidden"}`}>
+               {/* Color Coded Strip based on severity */}
+               <div className={`absolute top-0 left-0 w-2 h-full ${
+                  triageData?.category === 'Red' || triageData?.category === 'Emergency' ? 'bg-rose-500' :
+                  triageData?.category === 'Yellow' || triageData?.category === 'Urgent' ? 'bg-amber-400' :
+                  'bg-emerald-500'
+               }`} />
+
+               <div className="flex justify-between items-start mb-4 pl-4">
+                  <div>
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                       <Activity size={14} className="text-slate-900"/> AI Triage Result
+                    </h3>
+                    <p className={`text-2xl font-black uppercase italic tracking-tighter mt-1 ${
+                        triageData?.category === 'Red' ? 'text-rose-600' : 
+                        triageData?.category === 'Yellow' ? 'text-amber-500' : 'text-emerald-600'
+                    }`}>
+                        {triageData?.category || "Standard"}
+                    </p>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded">
+                     {triageData?.created_at ? new Date(triageData.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "--:--"}
+                  </span>
+               </div>
+
+               <div className="pl-4 space-y-3">
+                  <div>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Chief Complaint</p>
+                    <p className="text-sm font-bold text-slate-700 leading-tight">
+                        "{triageData?.chief_complaint || "No complaint recorded"}"
+                    </p>
+                  </div>
+                  
+                  {/* Vital Signs Grid (If you have them in the data) */}
+                  {triageData?.vital_signs && (
+                    <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-slate-50">
+                        <div className="bg-slate-50 p-2 rounded-lg text-center">
+                            <p className="text-[8px] font-bold text-slate-400 uppercase">HR</p>
+                            <p className="text-xs font-black text-slate-700">{triageData.vital_signs.heart_rate || "--"}</p>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded-lg text-center">
+                            <p className="text-[8px] font-bold text-slate-400 uppercase">BP</p>
+                            <p className="text-xs font-black text-slate-700">{triageData.vital_signs.bp || "--"}</p>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded-lg text-center">
+                            <p className="text-[8px] font-bold text-slate-400 uppercase">Temp</p>
+                            <p className="text-xs font-black text-slate-700">{triageData.vital_signs.temp || "--"}</p>
+                        </div>
+                    </div>
+                  )}
+               </div>
+            </div>
+          )}
 
           <div
             className={`grid gap-8 transition-all duration-500 shrink-0 pb-10 ${isVideoMinimized ? "grid-cols-2 h-[650px]" : "grid-cols-2 h-[380px]"}`}

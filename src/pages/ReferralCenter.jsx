@@ -28,6 +28,7 @@ const ReferralCenter = () => {
   };
 
   useEffect(() => {
+    document.title = "Referral Center | ATAMAN Health";
     fetchReferrals();
 
     // 1. Listen for status changes (Accepted/Diverted)

@@ -188,6 +188,7 @@ const ServiceAndFacilities = () => {
 
   useEffect(() => {
     fetchData();
+    document.title = "Service & Facilities | ATAMAN Health";
     const resChannel = supabase.channel('ncgh-logistics-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'facility_resources' }, fetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'beds' }, fetchData)

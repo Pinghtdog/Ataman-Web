@@ -54,6 +54,7 @@ const Overview = () => {
   };
 
   useEffect(() => {
+    document.title = "Overview | ATAMAN Health";
     fetchAllData();
     const bedChannel = supabase
       .channel("beds-live")

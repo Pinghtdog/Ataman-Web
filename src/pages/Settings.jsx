@@ -16,6 +16,7 @@ const Settings = () => {
   const [newRole, setNewRole] = useState("");
 
   useEffect(() => {
+    document.title = "Settings | ATAMAN Health";
     const initializeSettings = async () => {
       try {
         const {

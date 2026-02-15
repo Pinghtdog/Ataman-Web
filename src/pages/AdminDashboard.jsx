@@ -32,6 +32,7 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
+    document.title = "Admin Dashboard | ATAMAN Health";
     fetchBeds();
   }, []);
 

@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { Scanner } from "@yudiel/react-qr-scanner";
+import { useRef } from "react";
 
 const Charting = () => {
   // Navigation & Search States
@@ -43,6 +44,7 @@ const Charting = () => {
   const [showDocs, setShowDocs] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
+  const searchCache = useRef(new Map());
 
   // Clinical Encounter States
   const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
@@ -55,6 +57,7 @@ const Charting = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    document.title = "Charting | ATAMAN Health";
     fetchRecent();
     checkUserRole();
   }, []);
@@ -84,33 +87,74 @@ const Charting = () => {
     setLoadingRecent(false);
   };
 
-  const handleSearch = async (e, directTerm = null) => {
+const handleSearch = async (e, directTerm = null) => {
     if (e) e.preventDefault();
+    
     const termToUse = directTerm || searchTerm;
-    if (!termToUse.trim()) return;
+    const cleanTerm = termToUse.trim();
 
+    if (!cleanTerm) return;
+
+    // --- CACHE CHECK (Start) ---
+    // If we have seen this ID/Name before, use the saved data
+    if (searchCache.current.has(cleanTerm)) {
+        console.log("⚡ Serving from Cache:", cleanTerm);
+        const cachedData = searchCache.current.get(cleanTerm);
+        
+        setPatient(null);
+        setSearchResults([]);
+
+        if (cachedData.length === 1) {
+            selectPatient(cachedData[0]);
+        } else if (cachedData.length > 1) {
+            setSearchResults(cachedData);
+        } else {
+            alert("No records found (Cached).");
+        }
+        
+        if (directTerm) setSearchTerm(directTerm);
+        return; // STOP HERE! Do not call Supabase.
+    }
+    // --- CACHE CHECK (End) ---
+    
     setLoading(true);
     setPatient(null);
     setSearchResults([]);
 
-    const words = termToUse.trim().split(" ");
     let query = supabase.from("users").select("*");
 
-    if (words.length === 1) {
-      query = query.or(
-        `first_name.ilike.%${words[0]}%,last_name.ilike.%${words[0]}%,philhealth_id.eq.${words[0]},id.eq.${words[0]}`,
-      );
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTerm);
+
+    if (isUUID) {
+       query = query.eq('id', cleanTerm);
     } else {
-      query = query
-        .ilike("first_name", `%${words[0]}%`)
-        .ilike("last_name", `%${words[words.length - 1]}%`);
+       query = query.or(
+         `first_name.ilike.%${cleanTerm}%,last_name.ilike.%${cleanTerm}%,philhealth_id.eq.${cleanTerm},medical_id.eq.${cleanTerm}`
+       );
     }
 
-    const { data } = await query;
-    if (data?.length === 1) selectPatient(data[0]);
-    else if (data?.length > 1) setSearchResults(data);
-    else alert("No records found.");
+    const { data, error } = await query;
+    
+    if (error) {
+        console.error("Search Error:", error);
+        alert("Error searching database");
+    } else {
+        // --- SAVE TO CACHE (Start) ---
+        // Save the result so we don't have to fetch it next time
+        if (data) {
+            searchCache.current.set(cleanTerm, data);
+        }
+        // --- SAVE TO CACHE (End) ---
 
+        if (data?.length === 1) {
+            selectPatient(data[0]);
+        } else if (data?.length > 1) {
+            setSearchResults(data);
+        } else {
+            alert("No records found.");
+        }
+    }
+    
     if (directTerm) setSearchTerm(directTerm);
     setLoading(false);
   };
@@ -237,6 +281,47 @@ const Charting = () => {
         )}
       </div>
 
+      {/* --- SEARCH RESULTS (SUGGESTION BOX) --- */}
+      {!patient && searchResults.length > 0 && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-500">
+          <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 flex items-center gap-2">
+            <Search size={14} /> Found {searchResults.length} Match{searchResults.length > 1 ? "es" : ""}
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {searchResults.map((person) => (
+              <div
+                key={person.id}
+                onClick={() => selectPatient(person)}
+                className="bg-white p-6 rounded-[2rem] border border-emerald-100 shadow-md shadow-emerald-500/10 hover:border-emerald-500 hover:shadow-xl cursor-pointer flex justify-between items-center transition-all group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 group-hover:bg-[#00695C] group-hover:text-white transition-colors">
+                    <User size={20} />
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-800 text-sm uppercase tracking-tight">
+                      {person.first_name} {person.last_name}
+                    </p>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md uppercase">
+                        {person.philhealth_id || "No ID"}
+                      </span>
+                      <span className="text-[9px] font-bold text-gray-400 uppercase">
+                        {person.barangay || "Unknown"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight
+                  size={16}
+                  className="text-emerald-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-transform"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* RECENTLY ACCESSED */}
       {!patient && searchResults.length === 0 && (
         <div className="space-y-6 animate-in fade-in duration-700">
@@ -272,6 +357,8 @@ const Charting = () => {
           </div>
         </div>
       )}
+
+      
 
       {/* PATIENT CHART */}
       {patient && (
