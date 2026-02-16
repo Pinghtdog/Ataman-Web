@@ -14,6 +14,7 @@ import {
   LogOut,
   ChevronDown,
   Activity,
+  UserPlus,
 } from "lucide-react";
 import "./DashboardLayout.css";
 
@@ -104,6 +105,11 @@ const DashboardLayout = ({ userRole }) => {
       name: "Digital Charting",
       path: "/charting",
       icon: <FileText size={18} />,
+    },
+    {
+      name: "Assisted Booking",
+      path: "/assisted-booking",
+      icon: <UserPlus size={18} />,
     },
     { name: "Settings", path: "/settings", icon: <Settings size={18} /> },
   ];

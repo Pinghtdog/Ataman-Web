@@ -19,14 +19,16 @@ import {
   Maximize2,
   Minimize2,
   Phone,
+  ChevronDown,
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import Groq from "groq-sdk";
 
 const APP_ID = 1673152262;
 const SERVER_SECRET = "a19851b6acec66db9bff65413ffc2c2c";
-const GROQ_API_KEY = "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";
+const GROQ_API_KEY = "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";
 
 const Telemed = () => {
   const [queue, setQueue] = useState([]);
@@ -36,6 +38,8 @@ const Telemed = () => {
   const [loading, setLoading] = useState(true);
   const [expandedPatientId, setExpandedPatientId] = useState(null);
   const [showAcceptConfirm, setShowAcceptConfirm] = useState(null);
+
+  const [isRegistryCollapsed, setIsRegistryCollapsed] = useState(false);
 
   const [isVideoMinimized, setIsVideoMinimized] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState(null);
@@ -82,12 +86,12 @@ const Telemed = () => {
   // Function to fetch the latest triage result
   const fetchTriage = async (patientId) => {
     if (!patientId) return;
-    
+
     const { data, error } = await supabase
-      .from('triage_results')
-      .select('*')
-      .eq('user_id', patientId)
-      .order('created_at', { ascending: false })
+      .from("triage_results")
+      .select("*")
+      .eq("user_id", patientId)
+      .order("created_at", { ascending: false })
       .limit(1)
       .single();
 
@@ -202,12 +206,9 @@ const Telemed = () => {
   };
 
   const handleAISummarize = async () => {
-    if (!transcript || transcript.trim().length < 10) {
-      return alert("Transcript is too short for a clinical summary.");
-    }
-
+    if (!transcript || transcript.trim().length < 10)
+      return alert("Transcript too short.");
     setIsGeneratingAI(true);
-
     try {
       const chatCompletion = await groq.chat.completions.create({
         messages: [
@@ -226,20 +227,14 @@ const Telemed = () => {
              - PLAN: Prescriptions, lab tests, and follow-ups.
           4. If a medication is mentioned, ensure the dosage is noted.`,
           },
-          {
-            role: "user",
-            content: `Transcript to process: "${transcript}"`,
-          },
+          { role: "user", content: `Transcript: "${transcript}"` },
         ],
         model: "llama-3.3-70b-versatile",
         temperature: 0.3,
       });
-
-      const aiResponse = chatCompletion.choices[0]?.message?.content || "";
-      setNote(aiResponse);
+      setNote(chatCompletion.choices[0]?.message?.content || "");
     } catch (error) {
-      console.error("Groq AI Error:", error);
-      alert("AI Connection failed. Check your Groq Key.");
+      console.error(error);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -272,7 +267,7 @@ const Telemed = () => {
     alert("Record Committed Successfully.");
   };
 
-  if (loading) {
+  if (loading)
     return (
       <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
         <div className="relative mb-6 flex items-center justify-center">
@@ -294,23 +289,22 @@ const Telemed = () => {
         </div>
       </div>
     );
-  }
 
   return (
-    <div className="p-10 bg-[#F8FAFC] min-h-screen font-sans">
-      <div className="mb-10">
+    <div className="p-10 bg-[#F8FAFC] min-h-screen font-sans h-screen flex flex-col">
+      <div className="mb-10 shrink-0">
         <h1 className="text-4xl font-black text-slate-800 tracking-tighter leading-none text-primary">
           Tele-Ataman Hub
         </h1>
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[0.2em] mt-2">
-          Live Clinical Interface • Secure Node
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[0.2em] mt-2 italic">
+          / Operational Node / Clinical Interface
         </p>
       </div>
 
-      <div className="grid grid-cols-12 gap-10">
+      <div className="grid grid-cols-12 gap-10 flex-1 min-h-0">
         {/* LEFT PANEL */}
-        <div className="col-span-4 space-y-6">
-          <div className="relative">
+        <div className="col-span-4 flex flex-col gap-6 min-h-0">
+          <div className="relative shrink-0">
             {activeSession && (
               <div className="absolute inset-0 bg-emerald-500/20 rounded-[2.5rem] animate-ping" />
             )}
@@ -321,12 +315,12 @@ const Telemed = () => {
                 <Video size={140} strokeWidth={1} />
               </div>
               <div className="relative z-10">
-                <h3 className="text-[9px] font-bold uppercase tracking-widest opacity-60 mb-2">
+                <h3 className="text-[9px] font-bold uppercase tracking-widest opacity-60 mb-2 leading-none">
                   {activeSession
                     ? "Encrypted Link Active"
                     : "Consultation Queue"}
                 </h3>
-                <div className="text-6xl font-black tabular-nums tracking-tighter italic">
+                <div className="text-6xl font-black tabular-nums tracking-tighter italic leading-none">
                   {queue.length.toString().padStart(2, "0")}
                 </div>
               </div>
@@ -337,11 +331,29 @@ const Telemed = () => {
             </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[1rem] border border-slate-200 shadow-sm min-h-[350px] flex flex-col overflow-hidden">
-            <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-8 flex justify-between">
-              Registry <span>{queue.length} Patients</span>
-            </h4>
-            <div className="space-y-4 flex-1 overflow-y-auto no-scrollbar pr-1">
+          {/* --- COLLAPSIBLE REGISTRY --- */}
+          <div
+            className={`bg-white p-8 rounded-[1rem] border border-slate-200 shadow-sm flex flex-col overflow-hidden transition-all duration-500 ${isRegistryCollapsed ? "min-h-0" : "min-h-[350px] flex-1"}`}
+          >
+            <div
+              onClick={() => setIsRegistryCollapsed(!isRegistryCollapsed)}
+              className="flex justify-between items-center cursor-pointer group mb-4 shrink-0"
+            >
+              <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest group-hover:text-primary transition-colors">
+                Registry{" "}
+                <span className="ml-2 text-slate-200">
+                  {queue.length} Patients
+                </span>
+              </h4>
+              <ChevronDown
+                size={14}
+                className={`text-slate-300 transition-transform duration-300 ${isRegistryCollapsed ? "" : "rotate-180"}`}
+              />
+            </div>
+
+            <div
+              className={`space-y-3 overflow-y-auto no-scrollbar pr-1 transition-all duration-500 ${isRegistryCollapsed ? "max-h-0 opacity-0" : "max-h-[500px] opacity-100 flex-1"}`}
+            >
               {queue.map((s, index) => (
                 <div
                   key={s.id}
@@ -353,7 +365,7 @@ const Telemed = () => {
                   className={`group px-5 py-4 rounded-[1.5rem] border transition-all duration-300 ${activeSession?.id === s.id ? "bg-emerald-50 border-emerald-300 shadow-lg" : "bg-white border-slate-100 hover:border-emerald-200"}`}
                 >
                   <div className="flex justify-between items-center gap-4">
-                    <div className="flex items-center gap-5 flex-1 min-w-0">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
                       <div
                         className={`w-11 h-11 rounded-[1rem] shrink-0 flex items-center justify-center transition-colors ${activeSession?.id === s.id ? "bg-emerald-500 text-white shadow-lg" : "bg-slate-50 text-slate-300 border border-slate-100"}`}
                       >
@@ -376,17 +388,17 @@ const Telemed = () => {
                         }}
                         className="shrink-0 w-10 h-10 rounded-2xl bg-emerald-600 text-white shadow-xl hover:bg-slate-900 transition-all active:scale-90 flex items-center justify-center"
                       >
-                        <Phone size={18} fill="currentColor" />
+                        <Phone size={16} fill="currentColor" />
                       </button>
                     )}
                   </div>
                   {expandedPatientId === s.id && (
-                    <div className="mt-6 pt-6 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 space-y-3">
+                    <div className="mt-5 pt-5 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-[9px] font-black text-slate-300 uppercase">
+                        <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
                           System ID
                         </span>
-                        <span className="text-[10px] font-mono font-bold text-slate-500">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">
                           {s.patient.philhealth_id || "NOT LINKED"}
                         </span>
                       </div>
@@ -403,11 +415,15 @@ const Telemed = () => {
             </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[1rem] border border-slate-200 shadow-sm shrink-0">
-            <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-6 px-2 flex items-center gap-2">
+          <div
+            className={`bg-white p-8 rounded-[1rem] border border-slate-200 shadow-sm shrink-0 transition-all duration-500 ${isRegistryCollapsed ? "flex-1 overflow-hidden flex flex-col" : "h-fit"}`}
+          >
+            <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-6 px-2 flex items-center gap-2 uppercase">
               <History size={14} /> Records History
             </h4>
-            <div className="space-y-2">
+            <div
+              className={`space-y-2 overflow-y-auto no-scrollbar ${isRegistryCollapsed ? "flex-1" : ""}`}
+            >
               {sessionHistory.map((h) => (
                 <div
                   key={h.id}
@@ -424,8 +440,8 @@ const Telemed = () => {
           </div>
         </div>
 
-        {/* RIGHT CONTENT: Heroes and Workspaces */}
-        <div className="col-span-8 flex flex-col gap-8">
+        {/* RIGHT CONTENT */}
+        <div className="col-span-8 flex flex-col gap-8 min-h-0">
           <div
             className={`bg-slate-900 rounded-[2.5rem] shadow-2xl relative overflow-hidden border-[12px] border-white transition-all duration-500 ease-in-out shrink-0 ${isVideoMinimized ? "h-[240px]" : "h-[450px]"}`}
           >
@@ -465,66 +481,99 @@ const Telemed = () => {
 
           {/* --- NEW TRIAGE CARD INSERTED HERE --- */}
           {activeSession && (
-            <div className={`bg-white p-8 rounded-[1rem] shadow-sm border border-slate-200 relative overflow-hidden transition-all ${triageData ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4 hidden"}`}>
-               {/* Color Coded Strip based on severity */}
-               <div className={`absolute top-0 left-0 w-2 h-full ${
-                  triageData?.category === 'Red' || triageData?.category === 'Emergency' ? 'bg-rose-500' :
-                  triageData?.category === 'Yellow' || triageData?.category === 'Urgent' ? 'bg-amber-400' :
-                  'bg-emerald-500'
-               }`} />
+            <div
+              className={`bg-white p-8 rounded-[1rem] shadow-sm border border-slate-200 relative overflow-hidden transition-all ${triageData ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4 hidden"}`}
+            >
+              {/* Color Coded Strip based on severity */}
+              <div
+                className={`absolute top-0 left-0 w-2 h-full ${
+                  triageData?.category === "Red" ||
+                  triageData?.category === "Emergency"
+                    ? "bg-rose-500"
+                    : triageData?.category === "Yellow" ||
+                        triageData?.category === "Urgent"
+                      ? "bg-amber-400"
+                      : "bg-emerald-500"
+                }`}
+              />
 
-               <div className="flex justify-between items-start mb-4 pl-4">
-                  <div>
-                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                       <Activity size={14} className="text-slate-900"/> AI Triage Result
-                    </h3>
-                    <p className={`text-2xl font-black uppercase italic tracking-tighter mt-1 ${
-                        triageData?.category === 'Red' ? 'text-rose-600' : 
-                        triageData?.category === 'Yellow' ? 'text-amber-500' : 'text-emerald-600'
-                    }`}>
-                        {triageData?.category || "Standard"}
-                    </p>
-                  </div>
-                  <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded">
-                     {triageData?.created_at ? new Date(triageData.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "--:--"}
-                  </span>
-               </div>
+              <div className="flex justify-between items-start mb-4 pl-4">
+                <div>
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <Activity size={14} className="text-slate-900" /> AI Triage
+                    Result
+                  </h3>
+                  <p
+                    className={`text-2xl font-black uppercase italic tracking-tighter mt-1 ${
+                      triageData?.category === "Red"
+                        ? "text-rose-600"
+                        : triageData?.category === "Yellow"
+                          ? "text-amber-500"
+                          : "text-emerald-600"
+                    }`}
+                  >
+                    {triageData?.category || "Standard"}
+                  </p>
+                </div>
+                <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded">
+                  {triageData?.created_at
+                    ? new Date(triageData.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "--:--"}
+                </span>
+              </div>
 
-               <div className="pl-4 space-y-3">
-                  <div>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Chief Complaint</p>
-                    <p className="text-sm font-bold text-slate-700 leading-tight">
-                        "{triageData?.chief_complaint || "No complaint recorded"}"
-                    </p>
-                  </div>
-                  
-                  {/* Vital Signs Grid (If you have them in the data) */}
-                  {triageData?.vital_signs && (
-                    <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-slate-50">
-                        <div className="bg-slate-50 p-2 rounded-lg text-center">
-                            <p className="text-[8px] font-bold text-slate-400 uppercase">HR</p>
-                            <p className="text-xs font-black text-slate-700">{triageData.vital_signs.heart_rate || "--"}</p>
-                        </div>
-                        <div className="bg-slate-50 p-2 rounded-lg text-center">
-                            <p className="text-[8px] font-bold text-slate-400 uppercase">BP</p>
-                            <p className="text-xs font-black text-slate-700">{triageData.vital_signs.bp || "--"}</p>
-                        </div>
-                        <div className="bg-slate-50 p-2 rounded-lg text-center">
-                            <p className="text-[8px] font-bold text-slate-400 uppercase">Temp</p>
-                            <p className="text-xs font-black text-slate-700">{triageData.vital_signs.temp || "--"}</p>
-                        </div>
+              <div className="pl-4 space-y-3">
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    Chief Complaint
+                  </p>
+                  <p className="text-sm font-bold text-slate-700 leading-tight">
+                    "{triageData?.chief_complaint || "No complaint recorded"}"
+                  </p>
+                </div>
+
+                {/* Vital Signs Grid (If you have them in the data) */}
+                {triageData?.vital_signs && (
+                  <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-slate-50">
+                    <div className="bg-slate-50 p-2 rounded-lg text-center">
+                      <p className="text-[8px] font-bold text-slate-400 uppercase">
+                        HR
+                      </p>
+                      <p className="text-xs font-black text-slate-700">
+                        {triageData.vital_signs.heart_rate || "--"}
+                      </p>
                     </div>
-                  )}
-               </div>
+                    <div className="bg-slate-50 p-2 rounded-lg text-center">
+                      <p className="text-[8px] font-bold text-slate-400 uppercase">
+                        BP
+                      </p>
+                      <p className="text-xs font-black text-slate-700">
+                        {triageData.vital_signs.bp || "--"}
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded-lg text-center">
+                      <p className="text-[8px] font-bold text-slate-400 uppercase">
+                        Temp
+                      </p>
+                      <p className="text-xs font-black text-slate-700">
+                        {triageData.vital_signs.temp || "--"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           <div
             className={`grid gap-8 transition-all duration-500 shrink-0 pb-10 ${isVideoMinimized ? "grid-cols-2 h-[650px]" : "grid-cols-2 h-[380px]"}`}
           >
-            <div className="bg-white p-10 rounded-[1rem] shadow-sm border border-slate-200 flex flex-col group uppercase">
+            <div className="bg-white p-10 rounded-[1rem] shadow-sm border border-slate-200 flex flex-col group uppercase min-h-0">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 leading-none">
                   <Mic size={16} className="text-emerald-500" /> Scribe feed
                 </h3>
                 <button
@@ -551,8 +600,8 @@ const Telemed = () => {
               </button>
             </div>
 
-            <div className="bg-white p-10 rounded-[1rem] shadow-sm border border-slate-200 flex flex-col relative overflow-hidden group uppercase">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2 leading-none">
+            <div className="bg-white p-10 rounded-[1rem] shadow-sm border border-slate-200 flex flex-col relative overflow-hidden group uppercase min-h-0">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2 leading-none uppercase">
                 <FileText size={16} className="text-slate-900" /> note
                 disposition
               </h3>
@@ -565,7 +614,7 @@ const Telemed = () => {
               <button
                 onClick={handleSaveNote}
                 disabled={!activeSession || !note}
-                className="mt-8 w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-600 disabled:opacity-20 flex justify-center items-center gap-3 shadow-xl"
+                className="mt-8 w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-[#004D40] disabled:opacity-20 flex justify-center items-center gap-3 shadow-xl"
               >
                 <Send size={14} /> Commit to Permanent Record
               </button>
@@ -574,14 +623,14 @@ const Telemed = () => {
         </div>
       </div>
 
-      {/* --- PRETTY ACCEPT CONFIRMATION MODAL --- */}
+      {/* --- MODALS --- */}
       {showAcceptConfirm && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[250] p-4"
           onClick={() => setShowAcceptConfirm(null)}
         >
           <div
-            className="bg-white rounded-[1rem] shadow-2xl w-full max-w-sm p-10 text-center animate-in zoom-in duration-200 border border-white"
+            className="bg-white rounded-[1rem] shadow-2xl w-full max-w-sm p-10 text-center animate-in zoom-in border border-white"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-[1rem] flex items-center justify-center mx-auto mb-6 border border-emerald-100 shadow-inner">
@@ -594,12 +643,12 @@ const Telemed = () => {
               Clinical Protocol 402-A
             </p>
             <p className="text-sm font-medium text-slate-500 leading-relaxed px-2">
-              You are about to establish an encrypted video link with{" "}
-              <span className="text-slate-900 font-bold underline decoration-emerald-500 underline-offset-4">
+              Establish link with{" "}
+              <span className="text-slate-900 font-bold underline decoration-emerald-500 underline-offset-8 uppercase italic">
                 {showAcceptConfirm.patient.first_name}{" "}
                 {showAcceptConfirm.patient.last_name}
               </span>
-              .
+              ?
             </p>
             <div className="grid grid-cols-2 gap-4 mt-10">
               <button
@@ -619,7 +668,6 @@ const Telemed = () => {
         </div>
       )}
 
-      {/* --- HISTORY ARCHIVE MODAL --- */}
       {selectedHistory && (
         <div
           className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[200] p-4"
