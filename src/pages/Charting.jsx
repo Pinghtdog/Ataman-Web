@@ -87,7 +87,7 @@ const Charting = () => {
     setLoadingRecent(false);
   };
 
-const handleSearch = async (e, directTerm = null) => {
+  const handleSearch = async (e, directTerm = null) => {
     if (e) e.preventDefault();
     
     const termToUse = directTerm || searchTerm;
@@ -157,6 +157,44 @@ const handleSearch = async (e, directTerm = null) => {
     
     if (directTerm) setSearchTerm(directTerm);
     setLoading(false);
+  };
+
+  // --- NEW: DEDICATED QR SCANNER HANDLER ---
+  const handleQrScan = (detectedCodes) => {
+    if (detectedCodes && detectedCodes.length > 0) {
+      const rawValue = detectedCodes[0].rawValue;
+      if (!rawValue) return;
+
+      try {
+        // 1. Attempt to parse JSON (Secure Mode)
+        const qrData = JSON.parse(rawValue);
+
+        // 2. Validate Format & Expiration
+        if (qrData.type === "PATIENT_ID" && qrData.data && qrData.generated_at) {
+            
+            const generatedTime = new Date(qrData.generated_at).getTime();
+            const currentTime = Date.now();
+            const timeLimit = 10 * 60 * 1000; // 10 Minutes
+
+            if (currentTime - generatedTime > timeLimit) {
+                alert("⛔ SECURITY ALERT: This QR Code has expired.\nPlease ask the patient to refresh their screen.");
+                return; // Block the scan
+            }
+
+            console.log("✅ Secure QR Verified. ID:", qrData.data);
+            setShowScanner(false);
+            handleSearch(null, qrData.data); // Search using the UUID
+        } else {
+            // It's JSON but not our format? Treat as raw text just in case.
+             throw new Error("Unknown JSON format");
+        }
+      } catch (e) {
+        // 3. Fallback for Legacy/Printed QR Codes (Non-JSON)
+        console.log("⚠️ Scanned legacy/raw code:", rawValue);
+        setShowScanner(false);
+        handleSearch(null, rawValue);
+      }
+    }
   };
 
   const selectPatient = async (selectedPatient) => {
@@ -696,7 +734,15 @@ const handleSearch = async (e, directTerm = null) => {
               </button>
             </div>
             <div className="p-2 bg-black h-[350px]">
-              <Scanner onScan={(res) => handleSearch(null, res[0]?.rawValue)} />
+              {/* UPDATED: Uses dedicated handleQrScan instead of direct handleSearch */}
+              <Scanner 
+                 onScan={handleQrScan} 
+                 onError={(error) => {
+                    if (error?.message?.includes("permission")) {
+                        alert("Camera blocked! Please click the lock icon in your browser address bar to enable it.");
+                    }
+                 }}
+              />
             </div>
           </div>
         </div>
