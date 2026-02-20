@@ -18,11 +18,12 @@ import {
   UserPlus,
 } from "lucide-react";
 
-const DashboardLayout = ({ userRole }) => {
+const DashboardLayout = () => { // Removed { userRole } prop (we fetch it internally now)
   const location = useLocation();
   const navigate = useNavigate();
 
   const [userName, setUserName] = useState("Staff");
+  const [userRole, setUserRole] = useState(null); // <--- NEW: Local Role State
   const [hospitalCode, setHospitalCode] = useState("NCGH");
   const [myFacility, setMyFacility] = useState({
     id: null,
@@ -67,19 +68,22 @@ const DashboardLayout = ({ userRole }) => {
           setUserName(user.email?.split("@")[0] || "Staff");
         }
 
-        // B. Fetch Facility Info
+        // B. Fetch Facility Info AND Role
         const { data: staffData } = await supabase
           .from("facility_staff")
-          .select(`facility_id, facilities ( name, short_code )`)
+          .select(`role, facility_id, facilities ( name, short_code )`) // <--- Added 'role' to query
           .eq("user_id", user.id)
           .maybeSingle();
 
         if (staffData?.facilities) {
           const fId = staffData.facility_id;
+          
+          // Set Role & Facility
+          setUserRole(staffData.role); // <--- Store Role
           setHospitalCode(staffData.facilities.short_code);
           setMyFacility({ id: fId, name: staffData.facilities.name });
 
-          // C. Initial Load & Subscription (Filtered to this facility)
+          // C. Initial Load & Subscription
           fetchOccupancy(fId);
 
           const channel = supabase
@@ -109,30 +113,23 @@ const DashboardLayout = ({ userRole }) => {
     navigate("/");
   };
 
+  // --- DYNAMIC NAVIGATION MENU ---
   const navItems = [
     { name: "Overview", path: "/", icon: <LayoutDashboard size={18} /> },
     { name: "Bed Management", path: "/beds", icon: <BedDouble size={18} /> },
-    {
-      name: "Referral Center",
-      path: "/referrals",
-      icon: <PhoneIncoming size={18} />,
-    },
-    {
-      name: "Service & Facilities",
-      path: "/services",
-      icon: <Stethoscope size={18} />,
-    },
+    { name: "Referral Center", path: "/referrals", icon: <PhoneIncoming size={18} /> },
+    { name: "Service & Facilities", path: "/services", icon: <Stethoscope size={18} /> },
     { name: "Telemedicine Hub", path: "/telemed", icon: <MapIcon size={18} /> },
-    {
-      name: "Digital Charting",
-      path: "/charting",
-      icon: <FileText size={18} />,
-    },
-    {
-      name: "Assisted Booking",
-      path: "/assisted-booking",
-      icon: <UserPlus size={18} />,
-    },
+    { name: "Digital Charting", path: "/charting", icon: <FileText size={18} /> },
+    
+    // --- CONDITIONALLY ADD DOCTOR CONSOLE ---
+    ...(userRole === 'DOCTOR' ? [{ 
+        name: "Doctor Console", 
+        path: "/consultations", 
+        icon: <Stethoscope size={18} className="text-emerald-400" /> // Added color to distinguish
+    }] : []),
+
+    { name: "Assisted Booking", path: "/assisted-booking", icon: <UserPlus size={18} /> },
     { name: "Analytics", path: "/analytics", icon: <BarChart3 size={18} /> },
     { name: "Settings", path: "/settings", icon: <Settings size={18} /> },
   ];
@@ -330,6 +327,12 @@ const DashboardLayout = ({ userRole }) => {
                 {userRole === "ADMIN" && (
                   <span className="text-[8px] text-[#D97706] font-bold uppercase tracking-tighter mt-1 block">
                     Root Administrator
+                  </span>
+                )}
+                {/* NEW: SHOW DOCTOR BADGE */}
+                {userRole === "DOCTOR" && (
+                  <span className="text-[8px] text-emerald-600 font-bold uppercase tracking-tighter mt-1 block">
+                    Attending Physician
                   </span>
                 )}
               </div>

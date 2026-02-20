@@ -14,6 +14,7 @@ import ReferralCenter from "./pages/ReferralCenter";
 import ServiceAndFacilities from "./pages/ServiceAndFacilities";
 import AssistedBooking from "./pages/AssistedBooking";
 import Analytics from "./pages/Analytics";
+import Consultations from "./pages/Consultations";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -110,6 +111,7 @@ export default function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="assisted-booking" element={<AssistedBooking />} />
             <Route path="analytics" element={<Analytics />} />
+            <Route path="consultations" element={<Consultations />} />
 
             <Route
               path="admin"
