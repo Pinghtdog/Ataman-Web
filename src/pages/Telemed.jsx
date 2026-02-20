@@ -23,12 +23,12 @@ import {
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+// import { GoogleGenerativeAI } from "@google/generative-ai";
 import Groq from "groq-sdk";
 
 const APP_ID = 1673152262;
-const SERVER_SECRET = "a19851b6acec66db9bff65413ffc2c2c";
-const GROQ_API_KEY = "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";
+const SERVER_SECRET = import.meta.env.VITE_SERVER_SECRET;
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY_TELEMEDICINE;
 
 const Telemed = () => {
   const [queue, setQueue] = useState([]);
@@ -267,37 +267,33 @@ const Telemed = () => {
     alert("Record Committed Successfully.");
   };
 
-  if (loading)
+  if (loading) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
         <div className="relative mb-6 flex items-center justify-center">
-          <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75"></div>
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"></div>
+          <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75" />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600" />
         </div>
         <div className="space-y-2 text-center">
           <h2 className="text-lg font-bold tracking-tight">
-            Syncing Consultation Queues..
+            Syncing Telemedicine Hub...
           </h2>
-          <div className="flex items-center justify-center gap-2">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400"></span>
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.2s]"></span>
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.4s]"></span>
-          </div>
           <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
             Ataman Security Protocol Active
           </p>
         </div>
       </div>
     );
+  }
 
   return (
-    <div className="p-10 bg-[#F8FAFC] min-h-screen font-sans h-screen flex flex-col">
+    <div className="p-12 bg-[#F8FAFC] min-h-screen font-sans h-screen flex flex-col">
       <div className="mb-10 shrink-0">
         <h1 className="text-4xl font-black text-slate-800 tracking-tighter leading-none text-primary">
           Tele-Ataman Hub
         </h1>
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[0.2em] mt-2 italic">
-          / Operational Node / Clinical Interface
+        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-2 ">
+          Clinical Interface
         </p>
       </div>
 

@@ -21,12 +21,14 @@ import {
 import { supabase } from "../supabaseClient";
 import Groq from "groq-sdk";
 
-const GROQ_API_KEY = "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";
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY_ASSISTED_BOOKING;
 const groq = new Groq({ apiKey: GROQ_API_KEY, dangerouslyAllowBrowser: true });
 
 const AssistedBooking = () => {
   const [loading, setLoading] = useState(false);
   const [bookingStatus, setBookingStatus] = useState("idle");
+
+  const [showScanner, setShowScanner] = useState(false);
   const [myFacility, setMyFacility] = useState({
     id: null,
     name: "Loading Center...",
@@ -134,37 +136,66 @@ const AssistedBooking = () => {
     setIsAnalyzing(true);
 
     try {
-      const facilityContext = hospitals.map((h) => ({
-        name: h.name,
-        available_beds: h.beds.filter((b) => b.status === "available").length,
-        online_equipment: h.facility_resources
-          .filter((r) => r.status === "ONLINE")
-          .map((r) => r.resource_type)
-          .join(", "),
-        distance: `${calculateDistance(myFacility.latitude, myFacility.longitude, h.latitude, h.longitude)} KM`,
-      }));
+      const facilityContext = hospitals.map((h) => {
+        const total = h.beds.length;
+        const avail = h.beds.filter((b) => b.status === "available").length;
+        const load =
+          total > 0 ? Math.round(((total - avail) / total) * 100) : 0;
 
-      const prompt = `You are a Naga City Medical Triage AI. 
+        return {
+          name: h.name,
+          load: `${load}%`,
+          is_critical: load >= 90,
+          available_beds: avail,
+          equipment: h.facility_resources
+            .filter((r) => r.status === "ONLINE")
+            .map((r) => r.resource_type)
+            .join(", "),
+        };
+      });
+
+      const prompt = `You are a Naga City Triage AI. 
       Patient: ${selectedResident.first_name} ${selectedResident.last_name}
       Complaint: "${complaint}"
-      Current Hospital Context (Beds/Equipment/Distance): ${JSON.stringify(facilityContext)}
+      Hospitals: ${JSON.stringify(facilityContext)}
+
+      TASK: Rank the top 3 best-suited hospitals. 
+      RULES:
+      1. If load > 90%, avoid unless life-threatening (Chest pain, unconscious).
+      2. Return ONLY a raw JSON array. No conversational text.
       
-      Rank the top 3 best-suited hospitals. 
-      Return ONLY a JSON array: [{"name": "Hospital Name", "reason": "1 sentence medical reason", "score": 95, "urgency": "High"}]`;
+      FORMAT: [{"name": "Hospital Name", "reason": "1 sentence medical reason", "score": 95, "urgency": "High"}]`;
 
       const chat = await groq.chat.completions.create({
         messages: [{ role: "system", content: prompt }],
         model: "llama-3.3-70b-versatile",
-        temperature: 0.2,
+        temperature: 0.1, // Lower temperature = more consistent JSON
       });
 
-      const cleanJson = chat.choices[0].message.content.replace(
-        /```json|```/g,
-        "",
-      );
+      const responseText = chat.choices[0].message.content;
+
+      // --- ROBUST EXTRACTION (Fixes the SyntaxError) ---
+      // This looks for the first '[' and the last ']' to ignore any "Based on..." text
+      const jsonStart = responseText.indexOf("[");
+      const jsonEnd = responseText.lastIndexOf("]") + 1;
+
+      if (jsonStart === -1 || jsonEnd === 0) {
+        throw new Error("AI did not return a valid JSON array");
+      }
+
+      const cleanJson = responseText.substring(jsonStart, jsonEnd);
       setRecommendations(JSON.parse(cleanJson));
     } catch (e) {
       console.error("AI Analysis Failed", e);
+      // Fallback: If AI fails, show a manual referral option to NCGH
+      setRecommendations([
+        {
+          name: "Naga City General Hospital (NCGH)",
+          reason: "Primary tertiary facility. Proceed for immediate triage.",
+          score: 100,
+          urgency: "Emergency",
+        },
+      ]);
     } finally {
       setIsAnalyzing(false);
     }
@@ -236,12 +267,12 @@ const AssistedBooking = () => {
   }
 
   return (
-    <div className="p-10 bg-[#F8FAFC] min-h-screen font-sans">
+    <div className="p-12 bg-[#F8FAFC] min-h-screen font-sans">
       <div className="mb-12">
-        <h1 className="text-4xl font-black text-slate-800 tracking-tighter leading-none uppercase text-primary">
+        <h1 className="text-4xl font-black text-slate-800 tracking-tighter leading-none text-primary">
           Assisted Intake Portal
         </h1>
-        <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-[0.2em] mt-2">
+        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-2">
           {myFacility.name} Clinical Node
         </p>
       </div>
@@ -254,7 +285,7 @@ const AssistedBooking = () => {
               <div className="p-4 bg-emerald-50 text-emerald-600 rounded-[1.5rem] shadow-sm font-black italic">
                 ID
               </div>
-              <h3 className="text-lg font-bold text-gray-800 uppercase tracking-tight italic">
+              <h3 className="text-lg font-bold text-gray-800 uppercase tracking-tight">
                 Resident Search
               </h3>
             </div>

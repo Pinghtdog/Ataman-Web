@@ -13,6 +13,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import ReferralCenter from "./pages/ReferralCenter";
 import ServiceAndFacilities from "./pages/ServiceAndFacilities";
 import AssistedBooking from "./pages/AssistedBooking";
+import Analytics from "./pages/Analytics";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -108,6 +109,7 @@ export default function App() {
             <Route path="charting" element={<Charting />} />
             <Route path="settings" element={<Settings />} />
             <Route path="assisted-booking" element={<AssistedBooking />} />
+            <Route path="analytics" element={<Analytics />} />
 
             <Route
               path="admin"

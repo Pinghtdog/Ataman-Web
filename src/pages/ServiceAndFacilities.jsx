@@ -1,37 +1,40 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { supabase } from '../supabaseClient';
+import React, { useEffect, useState, useRef } from "react";
+import { supabase } from "../supabaseClient";
 
 const ServiceAndFacilities = () => {
   const [resources, setResources] = useState([]);
-  const [wardOccupancy, setWardOccupancy] = useState([]); 
+  const [wardOccupancy, setWardOccupancy] = useState([]);
   const [staffCounts, setStaffCounts] = useState({});
   const [activeOccupants, setActiveOccupants] = useState({});
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeSubCat, setActiveSubCat] = useState('All');
-  
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeSubCat, setActiveSubCat] = useState("All");
+
   // Assigning State
-  const [isAssigning, setIsAssigning] = useState(null); 
-  const [patientSearch, setPatientSearch] = useState('');
+  const [isAssigning, setIsAssigning] = useState(null);
+  const [patientSearch, setPatientSearch] = useState("");
   const [patientResults, setPatientResults] = useState([]);
-  
+
   // Edit/Update State
   const [editingItem, setEditingItem] = useState(null);
-  const [editForm, setEditForm] = useState({ total_capacity: 0, current_occupied: 0 });
+  const [editForm, setEditForm] = useState({
+    total_capacity: 0,
+    current_occupied: 0,
+  });
 
   const [tick, setTick] = useState(0);
-  
+
   const supplyChainRef = useRef(null);
   const facilityId = 1;
 
   const calculateDuration = (startTime) => {
-    if (!startTime) return '---';
+    if (!startTime) return "---";
     const start = new Date(startTime);
     const now = new Date();
     const diffInMs = now - start;
     const diffInMins = Math.floor(diffInMs / (1000 * 60));
-    
-    if (diffInMins < 1) return '< 1m'; 
+
+    if (diffInMins < 1) return "< 1m";
     if (diffInMins >= 60) {
       const hours = Math.floor(diffInMins / 60);
       const mins = diffInMins % 60;
@@ -45,45 +48,50 @@ const ServiceAndFacilities = () => {
     if (term.length < 2) return setPatientResults([]);
 
     const { data } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, medical_id')
-      .ilike('first_name', `%${term}%`) 
+      .from("users")
+      .select("id, first_name, last_name, medical_id")
+      .ilike("first_name", `%${term}%`)
       .limit(5);
-    
+
     setPatientResults(data || []);
   };
 
   const handleAssign = async (userId, resourceId) => {
-    const { error } = await supabase
-      .from('resource_assignments')
-      .insert([{ 
-        user_id: userId, 
-        resource_id: resourceId, 
+    const { error } = await supabase.from("resource_assignments").insert([
+      {
+        user_id: userId,
+        resource_id: resourceId,
         facility_id: facilityId,
-        assigned_at: new Date().toISOString() 
-      }]);
+        assigned_at: new Date().toISOString(),
+      },
+    ]);
 
     if (!error) {
       // Also increment occupied count
-      await supabase.rpc('increment_resource_usage', { row_id: resourceId }); // Optional: if you use RPC, otherwise update manually
-      
+      await supabase.rpc("increment_resource_usage", { row_id: resourceId }); // Optional: if you use RPC, otherwise update manually
+
       setIsAssigning(null);
-      setPatientSearch('');
-      fetchData(); 
+      setPatientSearch("");
+      fetchData();
     } else {
       console.error("Assignment Failed:", error.message);
     }
   };
 
   const handleRelease = async (userId, resourceId) => {
-    if (!window.confirm("Are you sure you want to release this patient from the unit?")) return;
+    if (
+      !window.confirm(
+        "Are you sure you want to release this patient from the unit?",
+      )
+    )
+      return;
 
     const { error } = await supabase
-      .from('resource_assignments')
+      .from("resource_assignments")
       .delete()
-      .eq('user_id', userId)
-      .eq('resource_id', resourceId);
-    
+      .eq("user_id", userId)
+      .eq("resource_id", resourceId);
+
     if (error) {
       console.error("Release Failed:", error.message);
       alert("Error releasing unit: " + error.message);
@@ -97,7 +105,7 @@ const ServiceAndFacilities = () => {
     setEditingItem(item);
     setEditForm({
       total_capacity: item.total_capacity,
-      current_occupied: item.current_occupied || 0
+      current_occupied: item.current_occupied || 0,
     });
   };
 
@@ -105,23 +113,23 @@ const ServiceAndFacilities = () => {
     if (!editingItem) return;
 
     // Calculate dynamic status based on stock levels
-    let newStatus = 'AVAILABLE';
+    let newStatus = "AVAILABLE";
     const usageRatio = editForm.current_occupied / editForm.total_capacity;
 
     if (editForm.current_occupied >= editForm.total_capacity) {
-      newStatus = 'OUT OF STOCK';
+      newStatus = "OUT OF STOCK";
     } else if (usageRatio >= 0.8) {
-      newStatus = 'CRITICAL';
+      newStatus = "CRITICAL";
     }
 
     const { error } = await supabase
-      .from('facility_resources')
+      .from("facility_resources")
       .update({
         total_capacity: editForm.total_capacity,
         current_occupied: editForm.current_occupied,
-        status: newStatus
+        status: newStatus,
       })
-      .eq('id', editingItem.id);
+      .eq("id", editingItem.id);
 
     if (error) {
       alert("Update failed: " + error.message);
@@ -134,45 +142,47 @@ const ServiceAndFacilities = () => {
 
   const fetchData = async () => {
     const { data: resData } = await supabase
-      .from('facility_resources')
-      .select('*, departments(*)')
-      .eq('facility_id', facilityId)
-      .order('resource_type', { ascending: true });
+      .from("facility_resources")
+      .select("*, departments(*)")
+      .eq("facility_id", facilityId)
+      .order("resource_type", { ascending: true });
 
-      const { data: occupantData } = await supabase
-        .from('resource_assignments')
-        .select('resource_id, user_id, assigned_at, users(first_name, last_name, medical_id)')
-        .eq('facility_id', facilityId);
+    const { data: occupantData } = await supabase
+      .from("resource_assignments")
+      .select(
+        "resource_id, user_id, assigned_at, users(first_name, last_name, medical_id)",
+      )
+      .eq("facility_id", facilityId);
 
-      const occupantMap = (occupantData || []).reduce((acc, curr) => {
-        if (curr.users) {
-          acc[curr.resource_id] = {
-            user_id: curr.user_id,
-            name: `${curr.users?.first_name || 'Unknown'} ${curr.users?.last_name || 'Patient'}`,
-            medical_id: curr.users?.medical_id || 'N/A',
-            assigned_at: curr.assigned_at 
-          };
-        }
-        return acc;
-      }, {});
+    const occupantMap = (occupantData || []).reduce((acc, curr) => {
+      if (curr.users) {
+        acc[curr.resource_id] = {
+          user_id: curr.user_id,
+          name: `${curr.users?.first_name || "Unknown"} ${curr.users?.last_name || "Patient"}`,
+          medical_id: curr.users?.medical_id || "N/A",
+          assigned_at: curr.assigned_at,
+        };
+      }
+      return acc;
+    }, {});
 
     const { data: bedData } = await supabase
-      .from('beds')
-      .select('ward_type, status')
-      .eq('facility_id', facilityId);
+      .from("beds")
+      .select("ward_type, status")
+      .eq("facility_id", facilityId);
 
     const wardStats = (bedData || []).reduce((acc, bed) => {
-      const type = bed.ward_type || 'General';
+      const type = bed.ward_type || "General";
       if (!acc[type]) acc[type] = { type, occupied: 0, total: 0 };
       acc[type].total += 1;
-      if (bed.status === 'occupied') acc[type].occupied += 1;
+      if (bed.status === "occupied") acc[type].occupied += 1;
       return acc;
     }, {});
 
     const { data: staffData } = await supabase
-      .from('facility_staff')
-      .select('department_id')
-      .eq('facility_id', facilityId);
+      .from("facility_staff")
+      .select("department_id")
+      .eq("facility_id", facilityId);
 
     const counts = (staffData || []).reduce((acc, curr) => {
       acc[curr.department_id] = (acc[curr.department_id] || 0) + 1;
@@ -189,36 +199,57 @@ const ServiceAndFacilities = () => {
   useEffect(() => {
     fetchData();
     document.title = "Service & Facilities | ATAMAN Health";
-    const resChannel = supabase.channel('ncgh-logistics-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'facility_resources' }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'beds' }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'facility_staff' }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'resource_assignments' }, fetchData)
+    const resChannel = supabase
+      .channel("ncgh-logistics-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "facility_resources" },
+        fetchData,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "beds" },
+        fetchData,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "referrals" },
+        fetchData,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "facility_staff" },
+        fetchData,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "resource_assignments" },
+        fetchData,
+      )
       .subscribe();
-    
+
     return () => supabase.removeChannel(resChannel);
   }, []);
 
   useEffect(() => {
     const timerInterval = setInterval(() => {
-      setTick(prev => prev + 1);
-    }, 60000); 
-    return () => clearInterval(timerInterval); 
+      setTick((prev) => prev + 1);
+    }, 60000);
+    return () => clearInterval(timerInterval);
   }, []);
 
   const handleToggleCapacity = async (item) => {
-    const currentStatus = (item.status || 'ONLINE').toUpperCase();
-    const nextStatus = currentStatus === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
+    const currentStatus = (item.status || "ONLINE").toUpperCase();
+    const nextStatus = currentStatus === "ONLINE" ? "OFFLINE" : "ONLINE";
 
-    setResources(prev => prev.map(r => 
-      r.id === item.id ? { ...r, status: nextStatus } : r
-    ));
+    setResources((prev) =>
+      prev.map((r) => (r.id === item.id ? { ...r, status: nextStatus } : r)),
+    );
 
     const { error } = await supabase
-      .from('facility_resources')
+      .from("facility_resources")
       .update({ status: nextStatus })
-      .eq('id', item.id);
+      .eq("id", item.id);
 
     if (error) {
       fetchData();
@@ -227,7 +258,7 @@ const ServiceAndFacilities = () => {
   };
 
   const handleToggle = (id) => {
-    const item = resources.find(r => r.id === id);
+    const item = resources.find((r) => r.id === id);
     if (item) {
       handleToggleCapacity(item);
     } else {
@@ -236,35 +267,43 @@ const ServiceAndFacilities = () => {
   };
 
   const clearFilters = () => {
-    setSearchTerm('');
-    setActiveSubCat('All');
+    setSearchTerm("");
+    setActiveSubCat("All");
   };
 
   const scrollToSupplyChain = (itemName) => {
     setSearchTerm(itemName);
-    setActiveSubCat('All');
-    supplyChainRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setActiveSubCat("All");
+    supplyChainRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   const criticalItems = resources.filter(
-    r => r.status === 'CRITICAL' || r.status === 'OUT OF STOCK'
+    (r) => r.status === "CRITICAL" || r.status === "OUT OF STOCK",
   );
 
   const equipment = resources.filter(
-    r =>
-      r.resource_category === 'equipment' &&
-      r.resource_type.toLowerCase().includes(searchTerm.toLowerCase())
+    (r) =>
+      r.resource_category === "equipment" &&
+      r.resource_type.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  const supplies = resources.filter(r => {
-    const isSupply = r.resource_category === 'supplies';
-    const matchesSearch = r.resource_type.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesSub = activeSubCat === 'All' || r.sub_category === activeSubCat;
+  const supplies = resources.filter((r) => {
+    const isSupply = r.resource_category === "supplies";
+    const matchesSearch = r.resource_type
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase());
+    const matchesSub =
+      activeSubCat === "All" || r.sub_category === activeSubCat;
     return isSupply && matchesSearch && matchesSub;
   });
 
   const subCategories = [
-    'All', 'Medications', 'PPE', 'First Aid', 'Nutritional', 'Sanitation'
+    "All",
+    "Medications",
+    "PPE",
+    "First Aid",
+    "Nutritional",
+    "Sanitation",
   ];
 
   if (loading) {
@@ -275,52 +314,73 @@ const ServiceAndFacilities = () => {
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600" />
         </div>
         <div className="space-y-2 text-center">
-          <h2 className="text-lg font-bold tracking-tight">Syncing Services and Facilities...</h2>
-          <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">Ataman Security Protocol Active</p>
+          <h2 className="text-lg font-bold tracking-tight">
+            Syncing Services and Facilities...
+          </h2>
+          <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
+            Ataman Security Protocol Active
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden font-sans relative">
-      
+    <div className="p-5 flex flex-col h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden font-sans relative">
       {/* --- UPDATE MODAL --- */}
       {editingItem && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white p-6 rounded-3xl w-96 shadow-2xl border border-slate-200">
-            <h3 className="text-sm font-black text-slate-800 uppercase mb-1">{editingItem.resource_type}</h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Update Inventory Levels</p>
-            
+            <h3 className="text-sm font-black text-slate-800 uppercase mb-1">
+              {editingItem.resource_type}
+            </h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">
+              Update Inventory Levels
+            </p>
+
             <div className="space-y-4">
               <div>
-                <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Total Capacity (Stock)</label>
-                <input 
-                  type="number" 
+                <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">
+                  Total Capacity (Stock)
+                </label>
+                <input
+                  type="number"
                   value={editForm.total_capacity}
-                  onChange={(e) => setEditForm({...editForm, total_capacity: parseInt(e.target.value) || 0})}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      total_capacity: parseInt(e.target.value) || 0,
+                    })
+                  }
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-800 focus:border-emerald-500 outline-none"
                 />
               </div>
               <div>
-                <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Current Usage / Reserved</label>
-                <input 
-                  type="number" 
+                <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">
+                  Current Usage / Reserved
+                </label>
+                <input
+                  type="number"
                   value={editForm.current_occupied}
-                  onChange={(e) => setEditForm({...editForm, current_occupied: parseInt(e.target.value) || 0})}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      current_occupied: parseInt(e.target.value) || 0,
+                    })
+                  }
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-800 focus:border-emerald-500 outline-none"
                 />
               </div>
             </div>
 
             <div className="flex gap-3 mt-8">
-              <button 
+              <button
                 onClick={() => setEditingItem(null)}
                 className="flex-1 py-3 rounded-xl bg-slate-100 text-[10px] font-black uppercase text-slate-500 hover:bg-slate-200"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={handleSaveUpdate}
                 className="flex-1 py-3 rounded-xl bg-emerald-600 text-[10px] font-black uppercase text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200"
               >
@@ -333,16 +393,25 @@ const ServiceAndFacilities = () => {
 
       <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <span className="bg-emerald-600 text-white text-[10px] px-2 py-1 rounded font-black tracking-tighter shadow-sm">NCGH LOGISTICS</span>
-          <span className="text-xs font-bold text-slate-400">Live Operations Board</span>
+          <span className="bg-emerald-600 text-white text-[10px] px-2 py-1 rounded font-black tracking-tighter shadow-sm">
+            NCGH LOGISTICS
+          </span>
+          <span className="text-xs font-bold text-slate-400">
+            Live Operations Board
+          </span>
         </div>
         <div className="flex items-center gap-3">
-          {(searchTerm !== '' || activeSubCat !== 'All') && (
-            <button onClick={clearFilters} className="text-[10px] font-black text-emerald-600 uppercase border border-emerald-100 bg-emerald-50 px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition-all">✕ Clear Filters</button>
+          {(searchTerm !== "" || activeSubCat !== "All") && (
+            <button
+              onClick={clearFilters}
+              className="text-[10px] font-black text-emerald-600 uppercase border border-emerald-100 bg-emerald-50 px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition-all"
+            >
+              ✕ Clear Filters
+            </button>
           )}
-          <input 
-            type="text" 
-            placeholder="Search assets..." 
+          <input
+            type="text"
+            placeholder="Search assets..."
             className="w-64 pl-4 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] outline-none focus:border-emerald-500 transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -354,7 +423,9 @@ const ServiceAndFacilities = () => {
         {/* ROW 1: VITALS */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Relational Ward Occupancy</h3>
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">
+              Relational Ward Occupancy
+            </h3>
             <div className="grid grid-cols-2 gap-x-10 gap-y-5">
               {wardOccupancy.map((ward, i) => {
                 const perc = Math.round((ward.occupied / ward.total) * 100);
@@ -362,12 +433,23 @@ const ServiceAndFacilities = () => {
                   <div key={i} className="flex flex-col gap-2">
                     <div className="flex justify-between text-[10px] font-black uppercase italic">
                       <span className="text-slate-700">{ward.type}</span>
-                      <span className={perc >= 80 ? 'text-rose-500' : 'text-emerald-500'}>{perc}%</span>
+                      <span
+                        className={
+                          perc >= 80 ? "text-rose-500" : "text-emerald-500"
+                        }
+                      >
+                        {perc}%
+                      </span>
                     </div>
                     <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-50">
-                      <div className={`h-full transition-all duration-700 ${perc >= 80 ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${perc}%` }} />
+                      <div
+                        className={`h-full transition-all duration-700 ${perc >= 80 ? "bg-rose-500" : "bg-emerald-500"}`}
+                        style={{ width: `${perc}%` }}
+                      />
                     </div>
-                    <p className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter">{ward.occupied} / {ward.total} Beds Occupied</p>
+                    <p className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter">
+                      {ward.occupied} / {ward.total} Beds Occupied
+                    </p>
                   </div>
                 );
               })}
@@ -375,15 +457,29 @@ const ServiceAndFacilities = () => {
           </div>
 
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Departmental Staffing Matrix</h3>
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">
+              Departmental Staffing Matrix
+            </h3>
             <div className="overflow-x-auto no-scrollbar">
               <div className="flex gap-4 pr-6">
                 {resources
-                  .filter((v, i, a) => a.findIndex(t => t.departments?.id === v.departments?.id) === i)
+                  .filter(
+                    (v, i, a) =>
+                      a.findIndex(
+                        (t) => t.departments?.id === v.departments?.id,
+                      ) === i,
+                  )
                   .map((r) => (
-                    <div key={r.departments?.id} className="min-w-[150px] flex-shrink-0 bg-slate-50 p-5 rounded-2xl border border-slate-100 group hover:border-emerald-200 transition-all">
-                      <p className="text-[9px] font-black text-slate-400 uppercase leading-none mb-3 truncate">{r.departments?.name || 'General'}</p>
-                      <p className="text-2xl font-black text-slate-800 tracking-tighter">{staffCounts[r.departments?.id] || 0}</p>
+                    <div
+                      key={r.departments?.id}
+                      className="min-w-[150px] flex-shrink-0 bg-slate-50 p-5 rounded-2xl border border-slate-100 group hover:border-emerald-200 transition-all"
+                    >
+                      <p className="text-[9px] font-black text-slate-400 uppercase leading-none mb-3 truncate">
+                        {r.departments?.name || "General"}
+                      </p>
+                      <p className="text-2xl font-black text-slate-800 tracking-tighter">
+                        {staffCounts[r.departments?.id] || 0}
+                      </p>
                       <div className="w-8 h-1 bg-emerald-500 rounded-full mt-2 group-hover:w-full transition-all" />
                     </div>
                   ))}
@@ -396,16 +492,27 @@ const ServiceAndFacilities = () => {
         {criticalItems.length > 0 && (
           <div className="space-y-3">
             <h3 className="text-[10px] font-black text-rose-500 uppercase tracking-widest flex items-center gap-2">
-              <span className="w-2 h-2 bg-rose-500 rounded-full animate-ping" /> Shortage Warnings
+              <span className="w-2 h-2 bg-rose-500 rounded-full animate-ping" />{" "}
+              Shortage Warnings
             </h3>
             <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-              {criticalItems.map(item => (
-                <div key={item.id} onClick={() => scrollToSupplyChain(item.resource_type)} className="min-w-[240px] cursor-pointer bg-rose-50 border border-rose-100 p-4 rounded-xl flex justify-between items-center shadow-sm hover:shadow-md transition-all active:scale-95">
+              {criticalItems.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => scrollToSupplyChain(item.resource_type)}
+                  className="min-w-[240px] cursor-pointer bg-rose-50 border border-rose-100 p-4 rounded-xl flex justify-between items-center shadow-sm hover:shadow-md transition-all active:scale-95"
+                >
                   <div>
-                    <p className="text-xs font-black text-rose-900 uppercase leading-tight">{item.resource_type}</p>
-                    <p className="text-[9px] text-rose-400 font-bold uppercase tracking-tighter">{item.sub_category}</p>
+                    <p className="text-xs font-black text-rose-900 uppercase leading-tight">
+                      {item.resource_type}
+                    </p>
+                    <p className="text-[9px] text-rose-400 font-bold uppercase tracking-tighter">
+                      {item.sub_category}
+                    </p>
                   </div>
-                  <span className="text-[9px] font-black text-rose-600 bg-rose-100 px-2 py-1 rounded border border-rose-200 uppercase">{item.status}</span>
+                  <span className="text-[9px] font-black text-rose-600 bg-rose-100 px-2 py-1 rounded border border-rose-200 uppercase">
+                    {item.status}
+                  </span>
                 </div>
               ))}
             </div>
@@ -416,45 +523,69 @@ const ServiceAndFacilities = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col h-[520px] shadow-sm">
             <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-              <h3 className="text-[11px] font-black text-slate-700 uppercase tracking-tight">Active Medical Equipment Registry</h3>
-              <span className="text-[9px] font-black text-slate-400 bg-white px-2 py-1 rounded border border-slate-100 uppercase tracking-tighter">{equipment.length} Units Counted</span>
+              <h3 className="text-[11px] font-black text-slate-700 uppercase tracking-tight">
+                Active Medical Equipment Registry
+              </h3>
+              <span className="text-[9px] font-black text-slate-400 bg-white px-2 py-1 rounded border border-slate-100 uppercase tracking-tighter">
+                {equipment.length} Units Counted
+              </span>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {equipment.map(item => {
+              {equipment.map((item) => {
                 const occupant = activeOccupants[item.id];
                 const isOccupied = !!occupant;
-                const isMaintenance = item.status?.toUpperCase() === 'OFFLINE';
+                const isMaintenance = item.status?.toUpperCase() === "OFFLINE";
 
                 return (
-                  <div key={item.id} className={`p-5 rounded-[2rem] border transition-all ${
-                    isMaintenance ? 'bg-slate-50 border-slate-200' : 
-                    isOccupied ? 'bg-white border-rose-100 shadow-sm' : 'bg-white border-emerald-100 shadow-sm'
-                  }`}>
+                  <div
+                    key={item.id}
+                    className={`p-5 rounded-[2rem] border transition-all ${
+                      isMaintenance
+                        ? "bg-slate-50 border-slate-200"
+                        : isOccupied
+                          ? "bg-white border-rose-100 shadow-sm"
+                          : "bg-white border-emerald-100 shadow-sm"
+                    }`}
+                  >
                     {/* TOP SECTION: UNIT INFO & ACTIONS */}
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-4">
-                        <div className={`w-3 h-3 rounded-full ${
-                          isMaintenance ? 'bg-slate-400' : 
-                          isOccupied ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]' : 
-                          'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]'
-                        }`} />
-                        
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            isMaintenance
+                              ? "bg-slate-400"
+                              : isOccupied
+                                ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]"
+                                : "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                          }`}
+                        />
+
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className={`text-sm font-black uppercase tracking-tight ${isMaintenance ? 'text-slate-400 line-through decoration-2' : 'text-slate-800'}`}>{item.resource_type}</h4>
+                            <h4
+                              className={`text-sm font-black uppercase tracking-tight ${isMaintenance ? "text-slate-400 line-through decoration-2" : "text-slate-800"}`}
+                            >
+                              {item.resource_type}
+                            </h4>
                             <span className="text-[10px] bg-slate-900 text-white px-2 py-0.5 rounded-md font-black italic">
-                              {item.unit_label || 'UNIT-A'}
+                              {item.unit_label || "UNIT-A"}
                             </span>
                           </div>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${isMaintenance ? 'text-rose-400' : 'text-slate-400'}`}>
-                            {isMaintenance ? '⚠️ Under Maintenance' : isOccupied ? `User: ${occupant.name}` : 'Ready for Patient'}
+                          <p
+                            className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${isMaintenance ? "text-rose-400" : "text-slate-400"}`}
+                          >
+                            {isMaintenance
+                              ? "⚠️ Under Maintenance"
+                              : isOccupied
+                                ? `User: ${occupant.name}`
+                                : "Ready for Patient"}
                           </p>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
                         {!isMaintenance && !isOccupied && (
-                          <button 
+                          <button
                             onClick={() => setIsAssigning(item.id)}
                             className="bg-emerald-600 text-white text-[10px] font-black px-5 py-2 rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
                           >
@@ -463,8 +594,10 @@ const ServiceAndFacilities = () => {
                         )}
 
                         {isOccupied && (
-                          <button 
-                            onClick={() => handleRelease(occupant.user_id, item.id)}
+                          <button
+                            onClick={() =>
+                              handleRelease(occupant.user_id, item.id)
+                            }
                             className="bg-rose-50 text-rose-600 border border-rose-100 text-[10px] font-black px-5 py-2 rounded-xl hover:bg-rose-600 hover:text-white transition-all active:scale-95"
                           >
                             DONE
@@ -472,20 +605,24 @@ const ServiceAndFacilities = () => {
                         )}
 
                         <div className="relative group">
-                          <button 
+                          <button
                             onClick={(e) => {
-                              e.stopPropagation(); 
+                              e.stopPropagation();
                               handleToggle(item.id);
                             }}
                             className={`p-2 rounded-xl border z-20 transition-all ${
-                              isMaintenance ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-800 hover:text-slate-800'
+                              isMaintenance
+                                ? "bg-slate-800 border-slate-800 text-white"
+                                : "bg-white border-slate-200 text-slate-400 hover:border-slate-800 hover:text-slate-800"
                             }`}
                           >
                             🔧
                           </button>
                           {/* TOOLTIP FOR MAINTENANCE */}
                           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-slate-800 text-white text-[9px] font-bold py-1 px-2 rounded whitespace-nowrap z-10">
-                            {isMaintenance ? 'Set to Available' : 'Set Maintenance'}
+                            {isMaintenance
+                              ? "Set to Available"
+                              : "Set Maintenance"}
                           </div>
                         </div>
                       </div>
@@ -496,16 +633,20 @@ const ServiceAndFacilities = () => {
                       <div className="mt-4 pt-3 border-t border-slate-50 flex justify-between items-center animate-in fade-in slide-in-from-top-1">
                         <div className="flex items-center gap-3">
                           <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Medical ID</span>
-                            <span className="text-[10px] font-bold text-slate-700 tracking-tight">{occupant.medical_id}</span>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">
+                              Medical ID
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-700 tracking-tight">
+                              {occupant.medical_id}
+                            </span>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-tighter">
-                              Active: {calculateDuration(occupant.assigned_at)}
-                            </span>
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-[10px] font-black text-emerald-700 uppercase tracking-tighter">
+                            Active: {calculateDuration(occupant.assigned_at)}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -516,7 +657,7 @@ const ServiceAndFacilities = () => {
                         <p className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.3em] mb-3">
                           Assign Patient to {item.unit_label}
                         </p>
-                        <input 
+                        <input
                           autoFocus
                           className="w-full bg-white text-slate-800 p-3 text-xs rounded-xl border border-slate-300 outline-none mb-2 placeholder:text-slate-400"
                           placeholder="Type Name or Medical ID..."
@@ -524,8 +665,8 @@ const ServiceAndFacilities = () => {
                           onChange={(e) => searchPatients(e.target.value)}
                         />
                         <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
-                          {patientResults.map(p => (
-                            <button 
+                          {patientResults.map((p) => (
+                            <button
                               key={p.id}
                               onClick={() => handleAssign(p.id, item.id)}
                               className="w-full text-left p-3 text-[10px] font-black uppercase text-slate-700 bg-slate-200/50 border border-slate-300 rounded-xl hover:bg-emerald-200 hover:text-slate-900 hover:border-emerald-300 transition-all"
@@ -534,8 +675,8 @@ const ServiceAndFacilities = () => {
                             </button>
                           ))}
                         </div>
-                        <button 
-                          onClick={() => setIsAssigning(null)} 
+                        <button
+                          onClick={() => setIsAssigning(null)}
                           className="w-full mt-3 text-[9px] font-black text-slate-500 uppercase hover:text-rose-400 transition-colors"
                         >
                           Cancel Search
@@ -549,13 +690,24 @@ const ServiceAndFacilities = () => {
           </div>
 
           {/* Supply Chain Table */}
-          <div ref={supplyChainRef} className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col h-[520px] shadow-sm">
+          <div
+            ref={supplyChainRef}
+            className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col h-[520px] shadow-sm"
+          >
             <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-4">
               <div className="flex justify-between items-center">
-                <h3 className="text-[11px] font-black text-slate-700 uppercase">Supply Chain Inventory</h3>
+                <h3 className="text-[11px] font-black text-slate-700 uppercase">
+                  Supply Chain Inventory
+                </h3>
                 <div className="flex gap-1">
-                  {subCategories.map(cat => (
-                    <button key={cat} onClick={() => setActiveSubCat(cat)} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${activeSubCat === cat ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200'}`}>{cat}</button>
+                  {subCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setActiveSubCat(cat)}
+                      className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${activeSubCat === cat ? "bg-emerald-600 text-white shadow-md" : "bg-white text-slate-400 border border-slate-200"}`}
+                    >
+                      {cat}
+                    </button>
                   ))}
                 </div>
               </div>
@@ -570,19 +722,29 @@ const ServiceAndFacilities = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {supplies.map(item => (
-                    <tr key={item.id} className="group hover:bg-slate-50 transition-colors">
+                  {supplies.map((item) => (
+                    <tr
+                      key={item.id}
+                      className="group hover:bg-slate-50 transition-colors"
+                    >
                       <td className="py-4">
-                        <p className="text-xs font-black text-slate-800 uppercase leading-none mb-1">{item.resource_type}</p>
+                        <p className="text-xs font-black text-slate-800 uppercase leading-none mb-1">
+                          {item.resource_type}
+                        </p>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter italic">
-                          {item.sub_category} — Stock: {item.total_capacity} | Used: {item.current_occupied || 0}
+                          {item.sub_category} — Stock: {item.total_capacity} |
+                          Used: {item.current_occupied || 0}
                         </p>
                       </td>
                       <td className="py-4">
-                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded border ${item.status === 'AVAILABLE' ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-rose-600 bg-rose-50 border-rose-100'}`}>{item.status}</span>
+                        <span
+                          className={`text-[8px] font-black uppercase px-2 py-1 rounded border ${item.status === "AVAILABLE" ? "text-emerald-600 bg-emerald-50 border-emerald-100" : "text-rose-600 bg-rose-50 border-rose-100"}`}
+                        >
+                          {item.status}
+                        </span>
                       </td>
                       <td className="py-4 text-right">
-                        <button 
+                        <button
                           onClick={() => handleEditClick(item)}
                           className="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-4 py-1.5 rounded-lg uppercase hover:bg-emerald-600 hover:text-white transition-all"
                         >
