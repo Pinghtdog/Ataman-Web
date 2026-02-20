@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import { X, BedDouble, Loader2, Clock } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const Overview = () => {
   const [beds, setBeds] = useState([]);
@@ -8,6 +9,7 @@ const Overview = () => {
   const [selectedBed, setSelectedBed] = useState(null);
   const [loading, setLoading] = useState(true);
   const [facilityId, setFacilityId] = useState(null);
+  const navigate = useNavigate();
 
   const fetchAllData = async () => {
     try {
@@ -52,6 +54,7 @@ const Overview = () => {
   };
 
   useEffect(() => {
+    document.title = "Overview | ATAMAN Health";
     fetchAllData();
     const bedChannel = supabase
       .channel("beds-live")
@@ -101,37 +104,26 @@ const Overview = () => {
       };
 
   if (loading) {
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
-      <div className="relative mb-6 flex items-center justify-center">
-        {/* Subtle Green Pulse */}
-        <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75"></div>
-        
-        {/* Main Emerald Spinner */}
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"></div>
-      </div>
-
-      <div className="space-y-2 text-center">
-        <h2 className="text-lg font-bold tracking-tight">
-          Syncing Overview...
-        </h2>
-        
-        <div className="flex items-center justify-center gap-2">
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400"></span>
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.2s]"></span>
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.4s]"></span>
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
+        <div className="relative mb-6 flex items-center justify-center">
+          <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75" />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600" />
         </div>
-
-        <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
-          Ataman Security Protocol Active
-        </p>
+        <div className="space-y-2 text-center">
+          <h2 className="text-lg font-bold tracking-tight">
+            Syncing Overview...
+          </h2>
+          <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
+            Ataman Security Protocol Active
+          </p>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   return (
-    <div className="p-8 bg-[#F8FAFC] min-h-screen">
+    <div className="p-12 bg-[#F8FAFC] min-h-screen font-sans">
       {/* GLOWING DYNAMIC STATUS */}
       <div className="mb-8">
         <span
@@ -142,7 +134,7 @@ const Overview = () => {
       </div>
 
       {/* COMPACT KPI CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10 font">
         {wardTypes.map((type) => {
           const s = wardStats[type];
           const percent = Math.round((s.occupied / s.total) * 100);
@@ -250,28 +242,30 @@ const Overview = () => {
             Referral Stream
           </h4>
           <div className="space-y-4">
-            {referrals.length === 0 ? (
-              <p className="py-20 text-center text-gray-300 font-medium text-[10px] uppercase tracking-widest">
-                Clear for now
-              </p>
-            ) : (
-              referrals.map((ref) => (
+            {referrals.map((ref) => (
+              <div
+                key={ref.id}
+                onClick={() =>
+                  navigate("/referrals", { state: { autoOpenId: ref.id } })
+                }
+                className="p-5 bg-gray-50 rounded-[1rem] border border-gray-100 relative overflow-hidden group hover:border-emerald-500 hover:shadow-md cursor-pointer transition-all active:scale-95"
+              >
                 <div
-                  key={ref.id}
-                  className="p-4 bg-gray-50 rounded-[1rem] border border-gray-100 relative overflow-hidden group hover:border-emerald-500 transition-all"
-                >
-                  <div
-                    className={`absolute left-0 top-0 bottom-0 w-1 ${ref.ai_priority_score >= 0.8 ? "bg-red-500" : "bg-[#00695C]"}`}
-                  />
-                  <p className="text-xs font-bold text-gray-800 uppercase mb-1">
+                  className={`absolute left-0 top-0 bottom-0 w-1 ${ref.ai_priority_score >= 0.8 ? "bg-red-500" : "bg-[#00695C]"}`}
+                />
+                <div className="flex justify-between items-start mb-1">
+                  <p className="text-xs font-bold text-gray-800 uppercase">
                     {ref.users?.first_name} {ref.users?.last_name}
                   </p>
-                  <p className="text-[9px] text-gray-400 font-medium uppercase tracking-widest">
-                    From: {ref.origin?.name}
-                  </p>
+                  <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-white border border-gray-100 text-gray-400">
+                    ESI {ref.ai_priority_score >= 0.8 ? "1" : "4"}
+                  </span>
                 </div>
-              ))
-            )}
+                <p className="text-[10px] text-gray-400 font-medium uppercase tracking-widest leading-none">
+                  From: {ref.origin?.name}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </div>

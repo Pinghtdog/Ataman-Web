@@ -1,370 +1,248 @@
 import React, { useState, useEffect } from "react";
-import { Save, UserCog, ShieldCheck, User, X } from "lucide-react";
+import {
+  Save,
+  UserCog,
+  ShieldCheck,
+  User,
+  X,
+  Activity,
+  Loader2,
+} from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 const Settings = () => {
   const [staff, setStaff] = useState([]);
-  const [occupancyThreshold, setOccupancyThreshold] = useState(90);
   const [loading, setLoading] = useState(true);
-
   const [currentFacilityId, setCurrentFacilityId] = useState(null);
   const [currentUserRole, setCurrentUserRole] = useState("");
   const [overallOccupancy, setOverallOccupancy] = useState(0);
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [newRole, setNewRole] = useState("");
 
-  useEffect(() => {
-    const initializeSettings = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const { data: staffRecord } = await supabase
-          .from("facility_staff")
-          .select("facility_id, role")
-          .eq("user_id", user.id)
-          .single();
-
-        if (staffRecord) {
-          setCurrentFacilityId(staffRecord.facility_id);
-          setCurrentUserRole(staffRecord.role);
-          await fetchSettingsData(staffRecord.facility_id);
-        }
-      } catch (error) {
-        console.error("Init Error:", error);
+  const initializeSettings = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: staffRecord } = await supabase
+        .from("facility_staff")
+        .select("facility_id, role")
+        .eq("user_id", user.id)
+        .single();
+      if (staffRecord) {
+        setCurrentFacilityId(staffRecord.facility_id);
+        setCurrentUserRole(staffRecord.role);
+        fetchSettingsData(staffRecord.facility_id);
+        fetchOverallOccupancy(staffRecord.facility_id);
       }
-    };
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const fetchSettingsData = async (fid) => {
+    const { data: staffData } = await supabase
+      .from("facility_staff")
+      .select(`id, role, user_id`)
+      .eq("facility_id", fid);
+    if (staffData && staffData.length > 0) {
+      const userIds = staffData.map((s) => s.user_id);
+      const { data: usersData } = await supabase
+        .from("users")
+        .select("id, first_name, last_name, email")
+        .in("id", userIds);
+      const merged = staffData.map((s) => ({
+        ...s,
+        name: usersData?.find((u) => u.id === s.user_id)?.first_name
+          ? `${usersData.find((u) => u.id === s.user_id).first_name} ${usersData.find((u) => u.id === s.user_id).last_name}`
+          : "Profile Pending",
+        email: usersData?.find((u) => u.id === s.user_id)?.email || "N/A",
+      }));
+      setStaff(merged);
+    }
+    setLoading(false);
+  };
+
+  const fetchOverallOccupancy = async (fid) => {
+    const { data } = await supabase
+      .from("beds")
+      .select("status")
+      .eq("facility_id", fid);
+    if (data?.length > 0) {
+      const occupied = data.filter((b) => b.status === "occupied").length;
+      setOverallOccupancy(Math.round((occupied / data.length) * 100));
+    }
+  };
+
+  useEffect(() => {
+    document.title = "Settings | ATAMAN";
     initializeSettings();
   }, []);
 
-  const fetchSettingsData = async (facilityId) => {
-    try {
-      const { data: facilityData } = await supabase
-        .from("facilities")
-        .select("metadata")
-        .eq("id", facilityId)
-        .single();
-      if (facilityData?.metadata?.diversion_threshold) {
-        setOccupancyThreshold(facilityData.metadata.diversion_threshold);
-      }
-
-      const { data: staffData } = await supabase
-        .from("facility_staff")
-        .select("id, role, user_id")
-        .eq("facility_id", facilityId);
-
-      if (staffData && staffData.length > 0) {
-        const userIds = staffData.map((s) => s.user_id);
-        const { data: usersData } = await supabase
-          .from("users")
-          .select("id, first_name, last_name, email")
-          .in("id", userIds);
-
-        const mergedStaff = staffData.map((s) => {
-          const u = usersData?.find((user) => user.id === s.user_id);
-          return {
-            ...s,
-            name: u?.first_name
-              ? `${u.first_name} ${u.last_name}`
-              : "Unknown (Update Profile)",
-            email: u?.email || "No Email",
-            access:
-              s.role === "ADMIN" ? "Full System Access" : "Tele-Ataman, Charts",
-          };
-        });
-        setStaff(mergedStaff);
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error(error);
-      setLoading(false);
-    }
-  };
-
-  const fetchOverallOccupancy = async () => {
-    const { data, error } = await supabase.from("beds").select("status");
-
-    if (data && data.length > 0) {
-      const total = data.length;
-      const occupied = data.filter((b) => b.status === "occupied").length;
-      const percentage = Math.round((occupied / total) * 100);
-      setOverallOccupancy(percentage);
-    }
-  };
-
-  useEffect(() => {
-    fetchOverallOccupancy();
-    const channel = supabase
-      .channel("settings-live")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "beds" },
-        fetchOverallOccupancy,
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, []);
-
-  const openEditModal = (staffMember) => {
-    setSelectedStaff(staffMember);
-    setNewRole(staffMember.role);
-    setIsModalOpen(true);
-  };
-
   const handleUpdateRole = async () => {
     if (!selectedStaff) return;
-
     const { error } = await supabase
       .from("facility_staff")
       .update({ role: newRole })
       .eq("id", selectedStaff.id);
-
-    if (error) {
-      alert("Failed to update role");
-    } else {
+    if (!error) {
       setStaff(
         staff.map((s) =>
           s.id === selectedStaff.id ? { ...s, role: newRole } : s,
         ),
       );
       setIsModalOpen(false);
-      alert("Role updated successfully!");
     }
   };
 
-  const handleSaveThreshold = async () => {
-    if (!currentFacilityId) return;
-    await supabase
-      .from("facilities")
-      .update({
-        metadata: { diversion_threshold: parseInt(occupancyThreshold) },
-      })
-      .eq("id", currentFacilityId);
-    alert("Automation rules updated!");
-  };
-
-if (loading) {
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
-      <div className="relative mb-6 flex items-center justify-center">
-        {/* Subtle Green Pulse */}
-        <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75"></div>
-        
-        {/* Main Emerald Spinner */}
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"></div>
+  if (loading)
+    return (
+      <div className="h-screen flex items-center justify-center text-gray-400 font-bold text-[10px] tracking-widest uppercase">
+        Initializing settings...
       </div>
+    );
 
-      <div className="space-y-2 text-center">
-        <h2 className="text-lg font-bold tracking-tight">
-          Settings..
-        </h2>
-        
-        <div className="flex items-center justify-center gap-2">
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400"></span>
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.2s]"></span>
+  return (
+    <div className="p-12 bg-[#F8FAFC] min-h-screen font-sans">
+      <div className="flex justify-between items-center mb-10">
+        <div>
+          <h1 className="text-4xl font-extrabold text-slate-800 tracking-tighter leading-none">
+            System Settings
+          </h1>
+          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-2">
+            Node Configuration & Staff Registry
+          </p>
         </div>
-
-        <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
-          Ataman Security Protocol Active
-        </p>
-      </div>
-    </div>
-  );
-}
-
-  return (
-    <div className="p-8 bg-gray-50 min-h-screen relative">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-extrabold text-gray-800 tracking-tight">
-          System Settings
-        </h2>
         {currentUserRole === "ADMIN" && (
-          <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-bold border border-green-200">
-            YOU ARE ADMIN
-          </span>
+          <div className="bg-emerald-50 text-emerald-600 px-6 py-2 rounded-2xl border border-emerald-100 flex items-center gap-2">
+            <ShieldCheck size={16} />
+            <span className="text-[10px] font-bold uppercase tracking-widest">
+              Administrator Node
+            </span>
+          </div>
         )}
       </div>
 
-      {/* STAFF TABLE */}
-      <div className="bg-white rounded-lg shadow mb-8 p-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <UserCog size={20} /> Staff Management
-        </h3>
-        <table className="w-full text-left">
-          <thead>
-            <tr className="text-xs text-gray-400 uppercase border-b bg-gray-50">
-              <th className="p-3 font-medium">Name</th>
-              <th className="p-3 font-medium">Role</th>
-              <th className="p-3 font-medium">Access Level</th>
-              <th className="p-3"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
+      <div className="space-y-10">
+        {/* STAFF MANAGEMENT - Unified 12-column Grid style */}
+        <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
+          <h2 className="text-lg font-bold text-slate-800 uppercase tracking-tight mb-8 px-2">
+            Staff Management
+          </h2>
+          <div className="space-y-4">
             {staff.map((s) => (
-              <tr key={s.id} className="hover:bg-gray-50">
-                <td className="p-3">
-                  <div className="font-medium text-gray-900">{s.name}</div>
-                  <div className="text-xs text-gray-500">{s.email}</div>
-                </td>
-                <td className="p-3">
+              <div
+                key={s.id}
+                className="grid grid-cols-12 items-center bg-gray-50/50 rounded-[2.2rem] p-6 border border-slate-50 hover:bg-white hover:border-primary transition-all group"
+              >
+                <div className="col-span-4 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-primary border border-slate-100 font-bold uppercase">
+                    {s.name[0]}
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-800 text-sm uppercase tracking-tight leading-none mb-1">
+                      {s.name}
+                    </p>
+                    <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest">
+                      {s.email}
+                    </p>
+                  </div>
+                </div>
+                <div className="col-span-3">
                   <span
-                    className={`px-2 py-1 rounded text-xs uppercase font-bold border ${s.role === "ADMIN" ? "bg-purple-100 text-purple-700 border-purple-200" : "bg-blue-50 text-blue-600 border-blue-100"}`}
+                    className={`px-4 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-widest border ${s.role === "ADMIN" ? "bg-primary text-white border-primary" : "bg-white text-slate-400 border-slate-200"}`}
                   >
                     {s.role}
                   </span>
-                </td>
-                <td className="p-3 text-gray-600 text-sm">{s.access}</td>
-                <td className="p-3 text-right">
+                </div>
+                <div className="col-span-3 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
+                  Facility Handshake Node
+                </div>
+                <div className="col-span-2 text-right">
                   <button
-                    onClick={() => openEditModal(s)}
-                    className="text-blue-600 hover:text-blue-900 text-sm font-medium"
-                  >
-                    Edit
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* SECTION 2: LIVE OPERATIONAL STATUS */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-tight">
-          Operational Status
-        </h3>
-
-        {/* Dynamic Color Calculation */}
-        {(() => {
-          const isCritical = overallOccupancy >= 90;
-          const isWarning = overallOccupancy >= 70 && overallOccupancy < 90;
-
-          // Define dynamic colors
-          const statusColor = isCritical
-            ? "text-red-600"
-            : isWarning
-              ? "text-orange-500"
-              : "text-emerald-600";
-          const bgColor = isCritical
-            ? "bg-red-600"
-            : isWarning
-              ? "bg-orange-500"
-              : "bg-emerald-600";
-          const shadowColor = isCritical
-            ? "rgba(220, 38, 38, 0.4)"
-            : isWarning
-              ? "rgba(249, 115, 22, 0.4)"
-              : "rgba(16, 185, 129, 0.4)";
-
-          return (
-            <div className="border border-gray-100 rounded-2xl p-8 bg-gray-50/50">
-              <div className="mb-6">
-                <label className="block text-gray-700 font-bold text-lg mb-1">
-                  Total Facility Occupancy
-                </label>
-                <p className="text-sm text-gray-400 font-medium">
-                  Real-time combined occupancy across ER and all Wards:
-                </p>
-              </div>
-
-              <div className="flex items-center gap-6">
-                {/* DYNAMIC PROGRESS BAR */}
-                <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-visible">
-                  {/* The Colored Fill */}
-                  <div
-                    className={`absolute top-0 left-0 h-full ${bgColor} rounded-full transition-all duration-700 ease-out`}
-                    style={{
-                      width: `${overallOccupancy}%`,
-                      boxShadow: `0 0 10px ${shadowColor}`,
+                    onClick={() => {
+                      setSelectedStaff(s);
+                      setNewRole(s.role);
+                      setIsModalOpen(true);
                     }}
+                    className="text-[10px] font-bold text-primary uppercase tracking-[0.2em] hover:text-black"
                   >
-                    {/* The Indicator Circle (The "Thumb") */}
-                    <div
-                      className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-6 h-6 ${bgColor} border-4 border-white rounded-full shadow-lg transition-colors duration-500`}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* DYNAMIC PERCENTAGE TEXT */}
-                <div className="flex flex-col items-end min-w-[5rem]">
-                  <span
-                    className={`${statusColor} font-black text-4xl leading-none transition-colors duration-500`}
-                  >
-                    {overallOccupancy}%
-                  </span>
+                    Edit protocol
+                  </button>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
 
-              {/* SYSTEM ADVISORY */}
-              <div className="mt-8 flex items-center gap-3 p-4 bg-white rounded-xl border border-gray-100">
+        {/* OPERATIONAL STATUS - Figma Styled */}
+        <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
+          <h2 className="text-lg font-bold text-slate-800 uppercase tracking-tight mb-8 px-2">
+            Operational Vitality
+          </h2>
+          <div className="border-2 border-dashed border-slate-100 rounded-[2.5rem] p-12 bg-gray-50/30">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.3em] mb-4">
+              Live Facility Occupancy (Real-time)
+            </p>
+            <div className="flex items-center gap-10">
+              <div className="flex-1 h-3 bg-white rounded-full relative overflow-visible shadow-inner">
                 <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
-                    isCritical
-                      ? "bg-red-600 animate-pulse"
-                      : isWarning
-                        ? "bg-orange-500"
-                        : "bg-emerald-500"
-                  }`}
-                ></div>
-                <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">
-                  {isCritical
-                    ? "Diversion Protocol Suggested: Capacity Critical"
-                    : isWarning
-                      ? "Warning: Approaching Capacity"
-                      : "Status: Normal Operations"}
-                </p>
+                  className={`absolute top-0 left-0 h-full rounded-full transition-all duration-1000 ${overallOccupancy >= 90 ? "bg-red-600" : overallOccupancy >= 70 ? "bg-orange-500" : "bg-primary"}`}
+                  style={{ width: `${overallOccupancy}%` }}
+                >
+                  <div
+                    className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-7 h-7 border-4 border-white rounded-full shadow-lg transition-colors ${overallOccupancy >= 90 ? "bg-red-600" : overallOccupancy >= 70 ? "bg-orange-500" : "bg-primary"}`}
+                  />
+                </div>
               </div>
+              <span
+                className={`text-6xl font-black italic tracking-tighter ${overallOccupancy >= 90 ? "text-red-600" : "text-primary"}`}
+              >
+                {overallOccupancy}%
+              </span>
             </div>
-          );
-        })()}
+          </div>
+        </div>
       </div>
 
-      {/* --- EDIT MODAL --- */}
+      {/* EDIT MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-96 p-6 animate-fade-in">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">Edit Staff Role</h3>
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-8 uppercase font-bold text-slate-800 tracking-tight leading-none">
+              Modify Permissions{" "}
               <button onClick={() => setIsModalOpen(false)}>
-                <X size={20} className="text-gray-400 hover:text-gray-600" />
+                <X />
               </button>
             </div>
-
-            <p className="text-sm text-gray-500 mb-4">
-              Change permissions for <b>{selectedStaff?.name}</b>.
+            <p className="text-xs font-medium text-slate-500 mb-6 uppercase tracking-widest">
+              Updating role for{" "}
+              <b className="text-slate-800">{selectedStaff?.name}</b>
             </p>
-
-            <label className="block text-sm font-bold text-gray-700 mb-2">
-              Select Role
-            </label>
             <select
               value={newRole}
               onChange={(e) => setNewRole(e.target.value)}
-              className="w-full border border-gray-300 rounded p-2 mb-6 focus:outline-none focus:border-[#00695C]"
+              className="w-full bg-slate-50 p-5 rounded-2xl outline-none focus:ring-2 focus:ring-primary/20 text-sm font-bold uppercase tracking-widest mb-10 border-none appearance-none cursor-pointer"
             >
               <option value="DOCTOR">DOCTOR</option>
               <option value="NURSE">NURSE</option>
               <option value="DISPATCHER">DISPATCHER</option>
               <option value="ADMIN">ADMIN</option>
             </select>
-
-            <div className="flex justify-end gap-3">
+            <div className="flex gap-4">
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                className="flex-1 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest rounded-xl hover:bg-slate-50"
               >
-                Cancel
+                Abort
               </button>
               <button
                 onClick={handleUpdateRole}
-                className="px-4 py-2 bg-[#00695C] text-white rounded hover:bg-[#004D40]"
+                className="flex-1 py-4 bg-primary text-white text-[10px] font-bold uppercase tracking-widest rounded-xl shadow-lg active:scale-95 transition-all"
               >
-                Save Changes
+                Confirm Role
               </button>
             </div>
           </div>

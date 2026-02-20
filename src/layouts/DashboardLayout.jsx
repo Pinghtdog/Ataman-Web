@@ -8,14 +8,15 @@ import {
   FileText,
   Settings,
   Stethoscope,
+  BarChart3,
   PhoneIncoming,
   AlertCircle,
   ShieldCheck,
   LogOut,
   ChevronDown,
   Activity,
+  UserPlus,
 } from "lucide-react";
-import "./DashboardLayout.css";
 
 const DashboardLayout = ({ userRole }) => {
   const location = useLocation();
@@ -23,16 +24,27 @@ const DashboardLayout = ({ userRole }) => {
 
   const [userName, setUserName] = useState("Staff");
   const [hospitalCode, setHospitalCode] = useState("NCGH");
-
+  const [myFacility, setMyFacility] = useState({
+    id: null,
+    name: "Loading...",
+  });
   const [overallOccupancy, setOverallOccupancy] = useState(0);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
 
-  const fetchOccupancy = async () => {
-    const { data } = await supabase.from("beds").select("status");
+  // --- LOGIC: Fetch Occupancy for THIS facility only ---
+  const fetchOccupancy = async (fId) => {
+    if (!fId) return;
+    const { data } = await supabase
+      .from("beds")
+      .select("status")
+      .eq("facility_id", fId);
+
     if (data && data.length > 0) {
       const occupied = data.filter((b) => b.status === "occupied").length;
       setOverallOccupancy(Math.round((occupied / data.length) * 100));
+    } else {
+      setOverallOccupancy(0);
     }
   };
 
@@ -42,6 +54,7 @@ const DashboardLayout = ({ userRole }) => {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
+        // A. Fetch Name
         const { data: userData } = await supabase
           .from("users")
           .select("first_name, last_name")
@@ -54,31 +67,41 @@ const DashboardLayout = ({ userRole }) => {
           setUserName(user.email?.split("@")[0] || "Staff");
         }
 
+        // B. Fetch Facility Info
         const { data: staffData } = await supabase
           .from("facility_staff")
-          .select(`facility_id, facilities ( short_code )`)
+          .select(`facility_id, facilities ( name, short_code )`)
           .eq("user_id", user.id)
           .maybeSingle();
 
         if (staffData?.facilities) {
+          const fId = staffData.facility_id;
           setHospitalCode(staffData.facilities.short_code);
+          setMyFacility({ id: fId, name: staffData.facilities.name });
+
+          // C. Initial Load & Subscription (Filtered to this facility)
+          fetchOccupancy(fId);
+
+          const channel = supabase
+            .channel(`global-status-${fId}`)
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "beds",
+                filter: `facility_id=eq.${fId}`,
+              },
+              () => fetchOccupancy(fId),
+            )
+            .subscribe();
+
+          return () => supabase.removeChannel(channel);
         }
       }
     };
 
     fetchUserAndFacility();
-    fetchOccupancy();
-
-    const channel = supabase
-      .channel("global-status")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "beds" },
-        fetchOccupancy,
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
   }, []);
 
   const handleLogout = async () => {
@@ -105,16 +128,14 @@ const DashboardLayout = ({ userRole }) => {
       path: "/charting",
       icon: <FileText size={18} />,
     },
+    {
+      name: "Assisted Booking",
+      path: "/assisted-booking",
+      icon: <UserPlus size={18} />,
+    },
+    { name: "Analytics", path: "/analytics", icon: <BarChart3 size={18} /> },
     { name: "Settings", path: "/settings", icon: <Settings size={18} /> },
   ];
-
-  const getCurrentTitle = () => {
-    if (location.pathname === "/admin") return "Admin Dashboard";
-    return (
-      navItems.find((i) => i.path === location.pathname)?.name ||
-      "Dashboard Overview"
-    );
-  };
 
   const getStatusConfig = () => {
     if (overallOccupancy >= 90)
@@ -142,70 +163,106 @@ const DashboardLayout = ({ userRole }) => {
   const status = getStatusConfig();
 
   return (
-    <div className="dashboard-container">
+    <div className="flex h-screen w-screen bg-[#F8FAFC] overflow-hidden font-sans">
       {/* SIDEBAR */}
-      <aside className="sidebar">
-        <div className="brand">
-          <h1>A.T.A.M.A.N.</h1>
-          <small>{hospitalCode} Command Center</small>
+      <aside className="w-64 bg-[#00695C] text-white flex flex-col flex-shrink-0 shadow-2xl z-20">
+        {/* SIDEBAR BRAND SECTION */}
+        <div className="brand p-8 mb-2 group cursor-default relative">
+          <div className="flex items-center gap-4">
+            {/* LOGO CONTAINER */}
+            <div className="bg-white/10 p-2 rounded-2xl border border-white/5 shrink-0 transition-all duration-500 group-hover:bg-emerald-500 group-hover:shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+              <img
+                src="/AtamanLogo.png"
+                alt="ATAMAN Logo"
+                className="w-10 h-10 object-contain transition-transform duration-1000 group-hover:rotate-[360deg]"
+              />
+            </div>
+
+            {/* TEXT SECTION */}
+            <div className="relative flex flex-col justify-center">
+              <div className="flex items-center relative">
+                <h1 className="text-xl font-bold tracking-tighter text-white leading-none m-0 z-10">
+                  ATAMAN
+                </h1>
+
+                {/* THE EASTER EGG: Floating Reveal */}
+                <div className="absolute left-full ml-4 pointer-events-none">
+                  <div className="whitespace-nowrap bg-slate-900/80 backdrop-blur-md border border-white/10 px-4 py-2 rounded-2xl transition-all duration-700 ease-out opacity-0 translate-x-[-20px] group-hover:opacity-100 group-hover:translate-x-0 shadow-2xl">
+                    <span className="text-[10px] font-medium text-emerald-400 tracking-widest uppercase italic">
+                      Automated Telehealth & Medical Assistance Network
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Subtitle */}
+              <p className="text-[9px] font-bold text-teal-200 uppercase tracking-[0.2em] mt-2 opacity-60">
+                {hospitalCode} COMMAND CENTER
+              </p>
+            </div>
+          </div>
         </div>
 
-        <nav className="nav-menu">
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto no-scrollbar">
           {navItems.map((item) => (
             <Link
               key={item.name}
               to={item.path}
-              className={`nav-link ${location.pathname === item.path ? "active" : ""}`}
+              className={`flex items-center px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                location.pathname === item.path
+                  ? "bg-[#80CBC4] text-[#004D40] shadow-lg shadow-teal-900/20 font-bold"
+                  : "text-teal-50 hover:bg-white/10 hover:text-white"
+              }`}
             >
-              <span>{item.icon}</span>
-              <span className="link-text">{item.name}</span>
+              <span className="shrink-0">{item.icon}</span>
+              <span className="ml-3 uppercase text-[10px] tracking-widest">
+                {item.name}
+              </span>
             </Link>
           ))}
 
           {userRole === "ADMIN" && (
             <>
-              <div
-                style={{
-                  height: "1px",
-                  background: "rgba(255,255,255,0.1)",
-                  margin: "10px 15px",
-                }}
-              />
+              <div className="h-px bg-white/10 mx-4 my-4" />
               <Link
                 to="/admin"
-                className={`nav-link ${location.pathname === "/admin" ? "active" : ""}`}
-                style={{ color: "#FFD54F" }}
+                className={`flex items-center px-4 py-3 rounded-xl transition-all text-[#FFD54F] ${
+                  location.pathname === "/admin"
+                    ? "bg-white/10 shadow-inner"
+                    : "hover:bg-white/5"
+                }`}
               >
-                <span>
-                  <ShieldCheck size={18} />
+                <ShieldCheck size={18} />
+                <span className="ml-3 uppercase text-[10px] font-black tracking-widest italic">
+                  Admin Dashboard
                 </span>
-                <span className="link-text">Admin Dashboard</span>
               </Link>
             </>
           )}
         </nav>
 
-        <div style={{ marginTop: "auto", padding: "0 15px 20px 15px" }}>
+        <div className="p-4 pb-8">
           <button
             onClick={handleLogout}
-            className="nav-link logout-btn-sidebar"
+            className="flex items-center justify-center w-full py-4 rounded-2xl border border-white/10 text-teal-100 text-[10px] font-bold uppercase tracking-widest hover:bg-white/5 hover:text-white transition-all active:scale-95"
           >
-            <span>
-              <LogOut size={18} />
-            </span>
-            <span className="link-text">Logout</span>
+            <LogOut size={16} className="mr-2" /> Logout
           </button>
         </div>
       </aside>
 
-      {/* MAIN CONTENT WRAPPER */}
-      <div className="main-wrapper">
-        <header className="top-header">
-          <div className="header-title">
-            <h2>{getCurrentTitle()}</h2>
+      {/* MAIN CONTENT */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* HEADER */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-10 shrink-0">
+          <div className="flex-1">
+            <h2 className="uppercase tracking-tight font-black text-slate-800 text-lg italic">
+              {myFacility.name}
+            </h2>
           </div>
 
-          <div className="header-right flex items-center gap-6">
+          <div className="flex items-center gap-8">
+            {/* STATUS PILL */}
             <div
               className="relative"
               onMouseEnter={() => setIsStatusOpen(true)}
@@ -213,79 +270,81 @@ const DashboardLayout = ({ userRole }) => {
             >
               <button
                 onClick={() => setIsPinned(!isPinned)}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-full transition-all border ${status.bg} ${status.border} ${status.color}`}
+                className={`flex items-center gap-2.5 px-5 py-1.5 rounded-full transition-all border ${status.bg} ${status.border} ${status.color} shadow-sm`}
               >
                 <div
                   className={`w-2 h-2 rounded-full ${overallOccupancy >= 90 ? "bg-red-600 animate-pulse" : status.color.replace("text", "bg")}`}
                 />
-                <span className="text-[10px] font-bold uppercase tracking-widest leading-none">
+                <span className="text-[10px] font-black uppercase tracking-widest leading-none">
                   {status.label}: {overallOccupancy}%
                 </span>
                 <ChevronDown
-                  size={12}
-                  className={`transition-transform ${isStatusOpen ? "rotate-180" : ""}`}
+                  size={14}
+                  className={`transition-transform duration-300 ${isStatusOpen ? "rotate-180" : ""}`}
                 />
               </button>
 
-              {/* Status Details Card */}
+              {/* Status Pop-out Card */}
               {(isStatusOpen || isPinned) && (
-                <div className="absolute top-12 right-0 w-64 bg-white rounded-3xl shadow-2xl border border-gray-100 p-6 z-[100] animate-in slide-in-from-top-2 duration-200">
-                  <div className="flex justify-between items-center mb-4">
-                    <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">
+                <div className="absolute top-12 right-0 w-72 bg-white rounded-[2rem] shadow-2xl border border-slate-100 p-8 z-[100] animate-in slide-in-from-top-2 duration-300">
+                  <div className="flex justify-between items-center mb-6">
+                    <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">
                       Operational Load
                     </h4>
-                    <Activity size={14} className={status.color} />
+                    <Activity size={16} className={status.color} />
                   </div>
-
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <span className={`text-3xl font-black ${status.color}`}>
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className={`text-4xl font-black ${status.color}`}>
                       {overallOccupancy}%
                     </span>
-                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
-                      Capacity
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">
+                      Real-time
                     </span>
                   </div>
-
-                  {/* Progress Bar */}
-                  <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden mb-4">
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-6">
                     <div
                       className={`h-full transition-all duration-1000 ${status.color.replace("text", "bg")}`}
                       style={{ width: `${overallOccupancy}%` }}
                     />
                   </div>
-
-                  <p className="text-[10px] text-gray-500 font-medium leading-relaxed italic">
+                  <p className="text-[11px] text-slate-500 font-medium leading-relaxed italic">
                     {overallOccupancy >= 90
-                      ? "Critical: Hospital is near maximum capacity. Diversion logic enabled."
-                      : "Operating within normal parameters. Resource availability is stable."}
+                      ? "System Critical: Divert incoming low-acuity cases to local BHC nodes."
+                      : "Handshake stable: Resources within normal operating parameters."}
                   </p>
-
                   <button
                     onClick={() => setIsPinned(!isPinned)}
-                    className="w-full mt-4 pt-3 border-t border-gray-50 text-[9px] font-bold text-gray-300 uppercase tracking-widest hover:text-primary transition-colors"
+                    className="w-full mt-6 pt-4 border-t border-slate-50 text-[10px] font-bold text-slate-300 uppercase tracking-widest hover:text-primary transition-colors"
                   >
-                    {isPinned ? "Click to Unpin" : "Click to Pin Open"}
+                    {isPinned ? "Click to Unpin" : "Pin Open"}
                   </button>
                 </div>
               )}
             </div>
 
-            <div className="user-info flex items-center">
-              <span className="font-medium text-gray-700">Hi, {userName}</span>
-              {userRole === "ADMIN" && (
-                <span className="ml-2 bg-[#FFD54F] text-black text-[10px] px-2 py-0.5 rounded font-bold uppercase">
-                  ADMIN
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <span className="block text-xs font-black text-slate-800 uppercase leading-none">
+                  {userName}
                 </span>
-              )}
+                {userRole === "ADMIN" && (
+                  <span className="text-[8px] text-[#D97706] font-bold uppercase tracking-tighter mt-1 block">
+                    Root Administrator
+                  </span>
+                )}
+              </div>
+              <div className="w-10 h-10 bg-slate-100 rounded-2xl border-2 border-white shadow-sm flex items-center justify-center text-slate-400 font-black">
+                {userName[0]}
+              </div>
+              <button className="p-2 border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 transition-colors">
+                <AlertCircle size={20} />
+              </button>
             </div>
-            <div className="avatar"></div>
-            <button className="icon-btn">
-              <AlertCircle size={18} />
-            </button>
           </div>
         </header>
 
-        <main className="page-content">
+        {/* CONTENT */}
+        <main className="flex-1 overflow-y-auto custom-scrollbar relative">
           <Outlet />
         </main>
       </div>

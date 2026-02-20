@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
+import { useLocation } from "react-router-dom";
 import {
   User,
   Search,
@@ -24,6 +25,7 @@ const BedManagement = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [chosenPatient, setChosenPatient] = useState(null);
   const [showDischargeConfirm, setShowDischargeConfirm] = useState(false);
+  const location = useLocation();
 
   const fetchData = async () => {
     try {
@@ -57,6 +59,7 @@ const BedManagement = () => {
 
   useEffect(() => {
     fetchData();
+    document.title = "Bed Management | ATAMAN Health";
     const channel = supabase
       .channel("beds-mgmt")
       .on(
@@ -158,43 +161,36 @@ const BedManagement = () => {
   };
 
   if (loading) {
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
-      <div className="relative mb-6 flex items-center justify-center">
-        <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75"></div>
-        
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"></div>
-      </div>
-
-      <div className="space-y-2 text-center">
-        <h2 className="text-lg font-bold tracking-tight">
-          Syncing Bed Management...
-        </h2>
-        
-        <div className="flex items-center justify-center gap-2">
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400"></span>
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.2s]"></span>
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-400 [animation-delay:0.4s]"></span>
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center bg-white font-sans text-emerald-600">
+        <div className="relative mb-6 flex items-center justify-center">
+          <div className="absolute h-16 w-16 animate-ping rounded-full bg-emerald-100 opacity-75" />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600" />
         </div>
-
-        <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
-          Ataman Security Protocol Active
-        </p>
+        <div className="space-y-2 text-center">
+          <h2 className="text-lg font-bold tracking-tight">
+            Syncing Bed Management...
+          </h2>
+          <p className="pt-4 text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-800/40">
+            Ataman Security Protocol Active
+          </p>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   return (
-    <div className="p-10 bg-[#F8FAFC] min-h-screen">
+    <div className="p-12 bg-[#F8FAFC] min-h-screen font-sans">
       <div className="flex justify-between items-start mb-10">
         <div>
-          <h1 className="text-3xl font-extrabold text-gray-800 tracking-tight">
+          <h1 className="text-4xl font-black text-slate-800 tracking-tighter">
             Bed Management
           </h1>
-          <p className="text-gray-500 text-sm font-medium">
-            Live Asset Control
-          </p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">
+              Live Asset Control
+            </p>
+          </div>
         </div>
 
         <div className="flex gap-4">
