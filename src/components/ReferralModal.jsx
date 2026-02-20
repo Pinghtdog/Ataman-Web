@@ -673,7 +673,7 @@ const handleFinalize = async () => {
                     ) : (
                       <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
                         <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
-                          {['OUTPATIENT', 'INPATIENT'].map((s) => (
+                          {['OUTPATIENT', 'INPATIENT', 'DIAGNOSTIC'].map((s) => (
                             <button key={s} onClick={() => { setServiceStream(s); setSelectedWard(''); }}
                                     className={`flex-1 py-3 rounded-lg text-[9px] font-black uppercase transition-all ${serviceStream === s ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}>{s}</button>
                           ))}
