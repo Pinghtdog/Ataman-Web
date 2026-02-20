@@ -38,31 +38,54 @@ const CreateReferralModal = ({ onClose, onSuccess, myFacilityId, initialData }) 
   useEffect(() => { loadInitialData(); }, [myFacilityId]);
 
   const loadInitialData = async () => {
-    if (!myFacilityId || myFacilityId === "null") return;
-    try {
-      setFetching(true);
-      const medicalRoles = ['DOCTOR', 'NURSE', 'HEAD_NURSE', 'RESIDENT', 'SPECIALIST', 'HEALTH_OFFICER', 'ATTENDANT'];
+  if (!myFacilityId || myFacilityId === "null") return;
+  try {
+    setFetching(true);
+    const medicalRoles = ['DOCTOR', 'NURSE', 'HEAD_NURSE', 'RESIDENT', 'SPECIALIST', 'HEALTH_OFFICER', 'ATTENDANT'];
 
-      const [fRes, pRes, aRes, sRes] = await Promise.all([
-        supabase.from("facilities").select("*").neq("id", myFacilityId),
-        supabase.from("users").select("id, first_name, last_name, medical_id").order("last_name"),
-        supabase.from("ambulances").select("id, plate_number").eq("is_available", true),
-        supabase.from("facility_staff")
-          .select(`id, role, users:user_id (first_name, last_name)`)
-          .eq("facility_id", Number(myFacilityId)) 
-          .in("role", medicalRoles)
-      ]);
+    const [fRes, pRes, aRes, sRes] = await Promise.all([
+      supabase.from("facilities").select("*").neq("id", myFacilityId),
+      supabase.from("admissions")
+        .select(`
+          status,
+          users:patient_id (
+            id, 
+            first_name, 
+            last_name, 
+            medical_id
+          )
+        `)
+        .eq("facility_id", Number(myFacilityId))
+        .eq("status", "ACTIVE"), 
 
-      setFacilities(fRes.data || []);
-      setPatients(pRes.data || []);
-      setAmbulances(aRes.data || []);
-      setStaff((sRes.data || []).map(item => ({
-        id: item.id,
-        role: item.role,
-        name: item.users ? `${item.users.last_name}, ${item.users.first_name}` : `Staff (${item.role})`
-      })));
-    } finally { setFetching(false); }
-  };
+      supabase.from("ambulances")
+        .select("id, plate_number")
+        .eq("facility_id", Number(myFacilityId)) 
+        .eq("is_available", true),
+
+      supabase.from("facility_staff")
+        .select(`id, role, users:user_id (first_name, last_name)`)
+        .eq("facility_id", Number(myFacilityId)) 
+        .in("role", medicalRoles)
+    ]);
+
+    setFacilities(fRes.data || []);
+    
+    const activePatients = (pRes.data || [])
+      .filter(item => item.users !== null)
+      .map(item => item.users);
+    setPatients(activePatients);
+
+    setAmbulances(aRes.data || []);
+    setStaff((sRes.data || []).map(item => ({
+      id: item.id,
+      role: item.role,
+      name: item.users ? `${item.users.last_name}, ${item.users.first_name}` : `Staff (${item.role})`
+    })));
+
+  } finally { setFetching(false); }
+};
+   
 
   const loadFacilityDetails = async (facility) => {
     try {
@@ -139,7 +162,7 @@ const CreateReferralModal = ({ onClose, onSuccess, myFacilityId, initialData }) 
             <div className="w-1 h-8 bg-emerald-500 rounded-full" />
             <div>
               <h2 className="text-base font-black uppercase italic tracking-tighter leading-none text-slate-800">Discovery Hub</h2>
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.3em] mt-0.5">Asset & Capability Terminal</p>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.3em] mt-0.5">Referral System</p>
             </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-xl hover:bg-rose-50 hover:text-rose-500 transition-all flex items-center justify-center text-slate-300">✕</button>
@@ -302,22 +325,22 @@ const CreateReferralModal = ({ onClose, onSuccess, myFacilityId, initialData }) 
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Admission Slip (Encrypted)</label>
+                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Referral Slip</label>
                     <div className="relative border border-slate-200 border-dashed rounded-xl p-3 h-[42px] flex items-center justify-center bg-slate-50/50">
                       <input type="file" required className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => setReferralFile(e.target.files[0])} />
-                      <p className="text-[8px] font-black uppercase text-slate-400 truncate px-2">{referralFile ? referralFile.name : "Attach Clinical Record"}</p>
+                      <p className="text-[8px] font-black uppercase text-slate-400 truncate px-2">{referralFile ? referralFile.name : "Attach Referral Slip*"}</p>
                     </div>
                   </div>
 
                   <div className="col-span-2 space-y-2">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Disposition Manifestation Brief</label>
+                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Chief Complaint</label>
                     <textarea required rows="2" placeholder="Clinical summary..." className="w-full bg-slate-50 p-4 rounded-xl font-bold text-[10px] border border-slate-100 outline-none resize-none focus:border-emerald-500"
                       onChange={(e) => setFormData({...formData, chief_complaint: e.target.value})} />
                   </div>
                 </div>
 
                 <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white py-4 mt-6 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl hover:bg-emerald-600 transition-all disabled:opacity-50">
-                  {loading ? "Synchronizing Hub Data..." : "Commit Disposition Protocol"}
+                  {loading ? "Synchronizing Hub Data..." : "Submit Referral Form"}
                 </button>
               </form>
             </div>

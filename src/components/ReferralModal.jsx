@@ -327,22 +327,29 @@ useEffect(() => {
 
 const handleFinalize = async () => {
   setIsProcessing(true);
+
   try {
     const normalizedStream = serviceStream.toUpperCase();
+    const isDiagnostic = normalizedStream === 'DIAGNOSTIC';
+    const isInpatient = normalizedStream === 'INPATIENT';
+    const isOutpatient = normalizedStream === 'OUTPATIENT';
 
+    // Resolve Patient ID safely
     const targetPatientId = 
       referral?.patient_id || 
       referral?.users?.id || 
       initialReferral?.patient_id;
 
+    if (!targetPatientId) throw new Error("Could not resolve Patient ID for assignment.");
     if (!facilityId) throw new Error("Staff facility ID missing.");
 
     // --- 1. DIAGNOSTIC LOGIC ---
-    if (normalizedStream === 'DIAGNOSTIC' && selectedWard) {
+    if (isDiagnostic && selectedWard) {
+      // Step A: Create the assignment record
       const { error: assignError } = await supabase
         .from('resource_assignments')
         .insert({
-          resource_id: selectedWard, 
+          resource_id: selectedWard, // UUID
           user_id: targetPatientId,
           facility_id: facilityId,
           assigned_at: new Date().toISOString()
@@ -351,43 +358,47 @@ const handleFinalize = async () => {
       if (assignError) throw assignError;
     }
 
-    // --- 2. INPATIENT LOGIC: Bed Assignment ---
-    if (normalizedStream === 'INPATIENT' && selectedBed) {
+    // --- 2. INPATIENT LOGIC ---
+    if (isInpatient && selectedBed) {
       const { error: bedError } = await supabase
         .from('beds')
         .update({ status: 'occupied', patient_id: targetPatientId })
-        .eq('id', selectedBed);
+        .eq('id', selectedBed); // BigInt
       
       if (bedError) throw bedError;
     }
 
-    // --- 3. REFERRAL UPDATE ---
-    // Note: We include assigned_department_id for both OUTPATIENT and DIAGNOSTIC streams
+    // --- 3. REFERRAL UPDATE (The Data Type Fix) ---
+    // We strictly separate UUID (assigned_resource_id) from BigInt (assigned_department_id)
     const { error: refError } = await supabase
       .from('referrals')
       .update({
         status: 'ACCEPTED',
         service_stream: normalizedStream,
-        assigned_bed_id: normalizedStream === 'INPATIENT' ? selectedBed : null,
-        assigned_department_id: (normalizedStream === 'OUTPATIENT' || normalizedStream === 'DIAGNOSTIC') ? selectedWard : null,  
-        destination_facility_id: facilityId 
+        destination_facility_id: facilityId,
+        // TYPE FIX HERE:
+        assigned_bed_id: isInpatient ? parseInt(selectedBed) : null,
+        assigned_department_id: (isInpatient || isOutpatient) ? parseInt(selectedWard) : null,
+        assigned_resource_id: isDiagnostic ? selectedWard : null // The new UUID column
       })
       .eq('id', referral.id);
 
     if (refError) throw refError;
 
     // --- 4. AMBULANCE RELEASE LOGIC ---
-    // Setting the ambulance back to available
-    if (referral.ambulances?.id) {
-      console.log(`Releasing Ambulance: ${referral.ambulances.plate_number}`);
+    const ambulanceId = referral.ambulances?.id || referral.ambulance_id;
+    if (ambulanceId) {
       const { error: ambError } = await supabase
         .from('ambulances')
-        .update({ is_available: true })
-        .eq('id', referral.ambulances.id);
+        .update({ 
+          is_available: true,
+          latitude: facilityData.latitutde,
+          longitude: facilityData.longitude,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', ambulanceId);
 
-      if (ambError) {
-        console.error("Ambulance Release Error:", ambError.message);
-      }
+      if (ambError) console.error("Ambulance Release Error:", ambError.message);
     }
 
     onUpdate();
@@ -465,248 +476,406 @@ const handleFinalize = async () => {
   };
 
   return (
-  <>
-    {/* CLINICAL COMMAND DESIGN SYSTEM */}
-    <style>
-      {`
-        @keyframes telemetry-pulse {
-          0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-          70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-        }
+    <>
+      {/* CLINICAL COMMAND DESIGN SYSTEM */}
+      <style>
+        {`
+          @keyframes telemetry-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+          }
 
-        .clinical-skeleton {
-          background: linear-gradient(90deg, #f1f5f9 25%, #f8fafc 50%, #f1f5f9 75%);
-          background-size: 200% 100%;
-          animation: shimmer-bg 2s infinite linear;
-        }
+          @keyframes shimmer-bg {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
 
-        .precision-hud {
-          background: rgba(255, 255, 255, 0.95);
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.15);
-        }
+          .clinical-skeleton {
+            background: linear-gradient(90deg, #f1f5f9 25%, #f8fafc 50%, #f1f5f9 75%);
+            background-size: 200% 100%;
+            animation: shimmer-bg 2s infinite linear;
+          }
 
-        .heartbeat-dot {
-          animation: telemetry-pulse 2s infinite;
-        }
+          .precision-hud {
+            background: rgba(255, 255, 255, 0.90);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.15);
+          }
 
-        .custom-scrollbar::-webkit-scrollbar { width: 3px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #94a3b8;
-          border-radius: 10px;
-        }
-      `}
-    </style>
+          .heartbeat-dot {
+            animation: telemetry-pulse 2s infinite;
+          }
 
-    <div className="fixed inset-0 bg-slate-950/45 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-[1.5rem] max-w-5xl w-full flex overflow-hidden shadow-[0_50px_100px_-20px_rgba(15,23,42,0.3)] h-[580px] border border-slate-200 animate-in fade-in zoom-in duration-300">
-        
-        {/* LEFT PANEL: EMS LOGISTICS MAP */}
-        <div className="w-[40%] relative bg-[#f1f5f9] border-r border-slate-100 overflow-hidden">
-          <div className={`absolute inset-0 transition-opacity duration-500 ${leftPanelView === 'map' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-            <Map height={580} center={mapCenter} zoom={15}>
-              {facilityData?.latitude && (
-                <Marker width={25} anchor={[Number(facilityData.latitude), Number(facilityData.longitude)]} color="#0D9488" />
-              )}
-              {Array.isArray(ambulancePos) && (
-                <Marker width={32} anchor={ambulancePos}>
-                  <AmbulanceIcon color="#E11D48" />
-                </Marker>
-              )}
-            </Map>
+          .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+          }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+          
+          /* Prevent layout shift on select */
+          select { text-overflow: ellipsis; }
+        `}
+      </style>
 
-            {/* TELEMETRY HUD */}
-            <div className="absolute bottom-4 left-4 right-4 precision-hud p-4 rounded-xl">
-              <div className="flex justify-between items-end">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full heartbeat-dot" />
-                    <p className="text-[7px] font-black text-emerald-600 uppercase tracking-[0.4em]">Active Inbound</p>
+      <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center z-50 backdrop-blur-md p-4 transition-all">
+        <div className="bg-white rounded-[1.5rem] max-w-5xl w-full flex overflow-hidden shadow-[0_50px_100px_-20px_rgba(15,23,42,0.5)] h-[620px] border border-slate-200 animate-in fade-in zoom-in duration-300">
+          
+          {/* LEFT PANEL: EMS LOGISTICS / DOCUMENTATION */}
+          <div className="w-[42%] relative bg-slate-100 border-r border-slate-200 overflow-hidden">
+            {/* VIEW 1: MAP HUD */}
+            <div className={`absolute inset-0 transition-all duration-500 ease-in-out ${leftPanelView === 'map' ? 'opacity-100 scale-100' : 'opacity-0 scale-105 pointer-events-none'}`}>
+              <Map height={620} center={mapCenter} zoom={15}>
+                {facilityData?.latitude && (
+                  <Marker width={25} anchor={[Number(facilityData.latitude), Number(facilityData.longitude)]} color="#0D9488" />
+                )}
+                {Array.isArray(ambulancePos) && (
+                  <Marker width={32} anchor={ambulancePos}>
+                    <AmbulanceIcon color="#E11D48" />
+                  </Marker>
+                )}
+              </Map>
+
+              {/* TELEMETRY HUD */}
+              <div className="absolute bottom-6 left-6 right-6 precision-hud p-5 rounded-2xl border border-white/50">
+                <div className="flex justify-between items-end">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full heartbeat-dot" />
+                      <p className="text-[8px] font-black text-emerald-600 uppercase tracking-[0.3em]">Telemetry Active</p>
+                    </div>
+                    <h4 className="text-[13px] font-black text-slate-900 uppercase tracking-tight truncate max-w-[180px]">
+                      {originHospital?.name || 'External Facility'}
+                    </h4>
                   </div>
-                  <h4 className="text-[12px] font-black text-slate-900 uppercase tracking-tight truncate max-w-[150px]">
-                    {originHospital?.name || 'Referring Node'}
-                  </h4>
-                </div>
-                <div className="text-right border-l border-slate-100 pl-4">
-                  <p className="text-[18px] font-black text-slate-900 tabular-nums leading-none tracking-tighter">
-                    {ambulancePos ? calculateETA(ambulancePos[0], ambulancePos[1]) : '--:--'}
-                  </p>
-                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mt-1">Est. Arrival Time</p>
+                  <div className="text-right border-l border-slate-200 pl-5">
+                    <p className="text-[22px] font-black text-slate-900 tabular-nums leading-none tracking-tighter">
+                      {ambulancePos ? calculateETA(ambulancePos[0], ambulancePos[1]) : 'TBD'}
+                    </p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Est. Arrival</p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className={`absolute inset-0 bg-white transition-all duration-500 flex flex-col ${leftPanelView === 'attachment' ? 'opacity-100' : 'opacity-0 translate-y-4'}`}>
-            <div className="p-3 bg-slate-50 border-b flex justify-between items-center">
-              <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em] pl-2">Clinical Documentation</span>
-              <button onClick={() => setLeftPanelView('map')} className="text-[8px] font-black text-slate-400 hover:text-rose-500 uppercase">Return to HUD</button>
-            </div>
-            <div className="flex-1 p-2">
-              {referral.referral_slip_url ? (
-                <iframe src={`${referral.referral_slip_url}#toolbar=0`} className="w-full h-full rounded-lg bg-slate-50 border border-slate-100" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-[8px] font-black text-slate-300 uppercase">Pending Record</div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT PANEL: CLINICAL OPERATIONS */}
-        <div className="w-[60%] flex flex-col bg-white">
-          <div className={`p-6 flex justify-between items-center transition-all ${
-            isLoading ? 'bg-slate-50' : (isLog || isSender ? 'bg-white border-b border-slate-100' : 'bg-slate-900 text-white')
-          }`}>
-            {!isLoading ? (
-              <>
-                <div className="space-y-1">
-                  <h2 className="text-lg font-black tracking-tighter uppercase italic leading-none">
-                    {isSender ? 'Outbound Transfer' : isLog ? 'Clinical Audit' : 'Triage Disposition'}
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[8px] font-bold tracking-[0.4em] text-slate-500 uppercase">Control ID: {referral.reference_number}</span>
-                  </div>
+            {/* VIEW 2: DOCUMENTATION IFRAME */}
+            <div className={`absolute inset-0 bg-white transition-all duration-500 ease-in-out flex flex-col ${leftPanelView === 'attachment' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8 pointer-events-none'}`}>
+              <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Clinical Record</span>
                 </div>
-                <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-rose-50 hover:text-rose-500 text-slate-400 transition-all">✕</button>
-              </>
-            ) : <div className="h-10 w-full" />}
-          </div>
-
-          <div className="p-8 flex-1 overflow-y-auto space-y-6 custom-scrollbar">
-            {isLoading ? (
-              <div className="space-y-4">
-                <div className="h-12 clinical-skeleton rounded-lg w-full" />
-                <div className="h-24 clinical-skeleton rounded-lg w-full" />
-              </div>
-            ) : (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                 
-                {/* TACTICAL ASSETS */}
-                <div className="grid grid-cols-2 gap-3 mb-6">
-                  <button onClick={() => setLeftPanelView('attachment')} className="group p-4 bg-slate-50 hover:bg-white rounded-xl border border-slate-100 hover:border-emerald-500 transition-all flex items-center gap-4">
-                    <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center text-lg shadow-sm border border-slate-50 group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-colors">📄</div>
-                    <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Medical Record</span>
+                <div className="flex items-center gap-2">
+                  {/* NEW DOWNLOAD BUTTON */}
+                  <button 
+                    onClick={handleDownload}
+                    className="px-3 py-1 bg-emerald-50 border border-emerald-100 rounded-full text-[8px] font-black text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all uppercase flex items-center gap-1"
+                  >
+                    DOWNLOAD PDF
                   </button>
-                  <div className="p-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 flex items-center gap-4 opacity-40">
-                    <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center text-lg">🧪</div>
-                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Imaging (N/A)</span>
-                  </div>
-                </div>
 
-                {/* PATIENT PROFILE */}
-                <div className="bg-[#f8fafc] border border-slate-200 p-6 rounded-2xl relative overflow-hidden mb-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <p className="text-[7px] font-black text-emerald-600 uppercase tracking-[0.3em] mb-1">Subject Verification</p>
-                      <h3 className="text-xl font-black text-slate-900 tracking-tighter uppercase leading-none">
-                        {referral.users?.first_name} {referral.users?.last_name}
-                      </h3>
+                  <button 
+                    onClick={() => setLeftPanelView('map')} 
+                    className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[8px] font-black text-slate-500 hover:text-rose-500 transition-colors uppercase"
+                  >
+                    Return to Map
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 p-3 bg-slate-200/50">
+              {referral.referral_slip_url ? (
+                <iframe 
+                  src={`${referral.referral_slip_url}#view=FitH&toolbar=0`} 
+                  className="w-full h-full rounded-xl shadow-inner bg-white border border-slate-300" 
+                  title="Clinical Docs"
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-400">
+                  <div className="w-12 h-12 rounded-full border-4 border-dashed border-slate-300 animate-spin" />
+                  <span className="text-[9px] font-black uppercase tracking-widest">Awaiting Uplink...</span>
+                </div>
+              )}
+            </div>
+          </div>
+          </div>
+
+          {/* RIGHT PANEL: CLINICAL OPERATIONS */}
+          <div className="w-[58%] flex flex-col bg-white">
+            {/* HEADER */}
+            <div className={`p-6 flex justify-between items-center transition-colors duration-500 ${
+              isLoading ? 'bg-slate-50' : (isLog || isSender ? 'bg-white border-b border-slate-100' : 'bg-slate-950 text-white')
+            }`}>
+              {!isLoading ? (
+                <>
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-black tracking-tighter uppercase italic leading-none">
+                      {isSender ? 'Outbound Pipeline' : isLog ? 'Case Registry' : 'Triage Command'}
+                    </h2>
+                    <div className="flex items-center gap-2 opacity-70">
+                      <div className="w-1 h-1 bg-current rounded-full" />
+                      <span className="text-[9px] font-bold tracking-[0.2em] uppercase">Ref ID: {referral.reference_number}</span>
                     </div>
-                    <div className="text-[7px] font-black text-slate-400 bg-white px-2 py-1 rounded-md border border-slate-100 italic">MEDID: {referral.users?.medical_id}</div>
                   </div>
-                  <div className="bg-white/80 p-3 rounded-xl border border-white shadow-sm">
-                    <p className="text-[11px] font-medium text-slate-600 leading-relaxed italic">"{referral.chief_complaint}"</p>
-                  </div>
+                  <button 
+                    onClick={onClose} 
+                    className="group w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800/10 hover:bg-rose-500 transition-all"
+                  >
+                    <span className="text-slate-400 group-hover:text-white transition-colors">✕</span>
+                  </button>
+                </>
+              ) : <div className="h-12 w-1/2 clinical-skeleton rounded-lg" />}
+            </div>
+
+            {/* CONTENT AREA */}
+            <div className="p-8 flex-1 overflow-y-auto space-y-8 custom-scrollbar">
+              {isLoading ? (
+                <div className="space-y-6">
+                  <div className="h-20 clinical-skeleton rounded-2xl w-full" />
+                  <div className="h-32 clinical-skeleton rounded-2xl w-full" />
+                  <div className="h-12 clinical-skeleton rounded-2xl w-2/3" />
                 </div>
-
-                {/* UPDATED SEMANTIC TIMELINE */}
-                {(isLog || isSender) ? (
-                  <div className="space-y-6">
-                    {isSender && (
-                      <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                        <p className="text-[7px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 text-center">Transfer Lifecycle Tracking</p>
-                        
-                        <div className="flex justify-between items-center px-2 relative">
-                          <div className="absolute h-[2px] bg-slate-200 left-10 right-10 top-[18px] -translate-y-1/2" />
-                          <div 
-                            className="absolute h-[2px] bg-emerald-500 left-10 transition-all duration-1000 top-[18px] -translate-y-1/2" 
-                            style={{ width: referral.status === 'ACCEPTED' ? 'calc(100% - 80px)' : '0%' }} 
-                          />
-
-                          {[
-                            { id: 1, label: 'INIT', desc: 'Initiated' },
-                            { id: 2, label: 'PROC', desc: 'Processing' },
-                            { id: 3, label: 'FIN', desc: 'Finalized' }
-                          ].map((step) => {
-                            const isCompleted = (step.id === 1) || (step.id === 2 && referral.status === 'ACCEPTED') || (step.id === 3 && referral.status === 'ACCEPTED');
-                            const isCurrent = (step.id === 2 && referral.status === 'PENDING');
-
-                            return (
-                              <div key={step.id} className="z-10 flex flex-col items-center gap-2">
-                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-[8px] font-black transition-all duration-500 border-4 border-white shadow-sm ${
-                                  isCompleted ? 'bg-emerald-500 text-white shadow-emerald-100 scale-110' : 
-                                  isCurrent ? 'bg-amber-400 text-white shadow-amber-100 animate-pulse' : 'bg-slate-200 text-slate-400'
-                                }`}>
-                                  {isCompleted ? '✓' : step.label}
-                                </div>
-                                <span className={`text-[7px] font-black uppercase tracking-tighter ${isCompleted ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                  {step.desc}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
+              ) : (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                  
+                  {/* ASSET SELECTORS */}
+                  <div className="grid grid-cols-2 gap-4 mb-8">
+                    <button 
+                      onClick={() => setLeftPanelView('attachment')} 
+                      className={`group p-4 rounded-2xl border transition-all flex items-center gap-4 ${
+                        leftPanelView === 'attachment' ? 'bg-emerald-50 border-emerald-500' : 'bg-slate-50 border-slate-100 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm border border-slate-100 group-hover:scale-110 transition-transform">📄</div>
+                      <div className="text-left">
+                        <p className={`text-[9px] font-black uppercase tracking-widest ${leftPanelView === 'attachment' ? 'text-emerald-600' : 'text-slate-600'}`}>Medical Dossier</p>
+                        <p className="text-[7px] text-slate-400 uppercase font-bold">Review Records</p>
                       </div>
-                    )}
-
-                    <div className="flex justify-between items-center p-4 bg-slate-900 rounded-xl border border-slate-800 shadow-xl">
-                      <div className="flex items-center gap-3">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 heartbeat-dot" />
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.3em]">Live Disposition Status</span>
+                    </button>
+                    <div className="p-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 flex items-center gap-4 opacity-50 grayscale">
+                      <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-xl">🧪</div>
+                      <div className="text-left">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Imaging</p>
+                        <p className="text-[7px] text-slate-400 uppercase font-bold">Offline</p>
                       </div>
-                      <span className={`text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded bg-white/5 ${
-                        referral.status === 'ACCEPTED' ? 'text-emerald-400' : 'text-amber-400'
+                    </div>
+                  </div>
+
+                  {/* PATIENT INFO CARD */}
+                  <div className="bg-slate-50 border border-slate-200 p-6 rounded-[1.5rem] relative overflow-hidden mb-8 shadow-sm">
+                    <div className="absolute top-0 right-0 p-4">
+                       <span className="text-[8px] font-black text-slate-300 tracking-tighter uppercase opacity-50">Confidential</span>
+                    </div>
+                    <div className="flex justify-between items-start mb-5">
+                      <div>
+                        <p className="text-[8px] font-black text-emerald-600 uppercase tracking-[0.3em] mb-1.5">Referral Patient Details</p>
+                        <h3 className="text-1xl font-black text-slate-900 tracking-tighter uppercase leading-none">
+                          {referral.users?.first_name} {referral.users?.last_name}
+                        </h3>
+                      </div>
+                      <div className="text-[8px] font-black text-slate-500 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                        ID: {referral.users?.medical_id || 'N/A'}
+                      </div>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm relative">
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500 rounded-l-xl" />
+                      <p className="text-xs font-semibold text-slate-700 leading-relaxed italic">
+                        "{referral.chief_complaint || 'No complaint specified'}"
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* ACTION LOGIC / FORM */}
+                  {(isLog || isSender) ? (
+                    <div className="space-y-6 animate-in fade-in duration-500">
+                      {/* DISPOSITION DETAILS CARD */}
+                      <div className={`rounded-[1.5rem] p-6 shadow-sm border relative overflow-hidden ${
+                        referral.status === 'DIVERTED' 
+                          ? 'bg-orange-50 border-orange-200' 
+                          : 'bg-white border-slate-200'
                       }`}>
-                        {referral.status}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {view === 'details' ? (
-                      <div className="flex gap-2">
-                        <button onClick={() => setView('accept')} className="flex-[3] bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-xl font-black text-[10px] uppercase tracking-[0.3em] shadow-lg shadow-emerald-100 active:scale-95 transition-all">Accept Admission</button>
-                        <button onClick={handleDivert} className="flex-1 bg-white border border-rose-200 text-rose-500 py-4 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-rose-50 transition-all">Divert</button>
+                        {/* Subtle Background Icon */}
+                        <div className="absolute -right-4 -bottom-4 text-7xl opacity-5 grayscale pointer-events-none">
+                          {referral.status === 'DIVERTED' ? '↩️' : 
+                          referral.service_stream === 'DIAGNOSTIC' ? '🧪' : 
+                          referral.service_stream === 'INPATIENT' ? '🏥' : '🩺'}
+                        </div>
+
+                        <div className="relative z-10">
+                          <p className={`text-[8px] font-black uppercase tracking-[0.4em] mb-4 ${
+                            referral.status === 'DIVERTED' ? 'text-orange-600' : 'text-emerald-600'
+                          }`}>
+                            {referral.status === 'DIVERTED' ? 'Diversion Protocol' : 'Finalized Disposition'}
+                          </p>
+                          
+                          <div className="grid grid-cols-2 gap-6">
+                            {/* Left Column: Status / Stream Type */}
+                            <div>
+                              <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">
+                                {referral.status === 'DIVERTED' ? 'Protocol Status' : 'Service Stream'}
+                              </p>
+                              <p className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                                {referral.status === 'DIVERTED' ? 'Diverted Out' : (referral.service_stream || 'N/A')}
+                              </p>
+                            </div>
+
+                            {/* Right Column: Dynamic Assignment Details */}
+                            <div>
+                              <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">
+                                {referral.status === 'DIVERTED' ? 'Target Facility' : 
+                                referral.service_stream === 'DIAGNOSTIC' ? 'Assigned Equipment' : 
+                                referral.service_stream === 'INPATIENT' ? 'Bed Allocation' : 'Department'}
+                              </p>
+                              <p className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                                {referral.status === 'DIVERTED' ? 
+                                  (referral.destination_facility?.name || 'External Medical Center') :
+                                referral.service_stream === 'DIAGNOSTIC' ? 
+                                  (referral.resource_assignments?.[0]?.facility_resources?.unit_label || 'Laboratory Asset') :
+                                referral.service_stream === 'INPATIENT' ? 
+                                  (`${referral.beds?.ward_type || 'Ward'} - ${referral.beds?.bed_label || 'Unassigned'}`) :
+                                (referral.departments?.name || 'General Outpatient')}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className={`mt-6 pt-6 border-t flex justify-between items-center ${
+                            referral.status === 'DIVERTED' ? 'border-orange-200' : 'border-slate-100'
+                          }`}>
+                            <div className="flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full heartbeat-dot ${
+                                referral.status === 'DIVERTED' ? 'bg-orange-500' : 'bg-emerald-500'
+                              }`} />
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                {referral.status === 'DIVERTED' ? 'Rerouting in Progress' : 'Confirmed & Synchronized'}
+                              </span>
+                            </div>
+                            <span className={`text-[10px] font-black px-3 py-1 rounded-md border ${
+                              referral.status === 'DIVERTED' 
+                                ? 'text-orange-600 bg-orange-100 border-orange-200' 
+                                : 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                            }`}>
+                              {referral.status}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    ) : (
-                      <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
-                        <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
-                          {['OUTPATIENT', 'INPATIENT', 'DIAGNOSTIC'].map((s) => (
-                            <button key={s} onClick={() => { setServiceStream(s); setSelectedWard(''); }}
-                                    className={`flex-1 py-3 rounded-lg text-[9px] font-black uppercase transition-all ${serviceStream === s ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}>{s}</button>
-                          ))}
-                        </div>
-                        <div className="relative">
-                          <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-[10px] font-black uppercase outline-none focus:border-emerald-500 appearance-none"
-                                  value={selectedWard} onChange={(e) => setSelectedWard(e.target.value)}>
-                            <option value="">Choose Admissions Unit...</option>
-                            {serviceStream === 'INPATIENT' ? wardTypes.map((w, i) => (
-                              <option key={i} value={w.type}>{w.type} Unit</option>
-                            )) : departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                          </select>
-                          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 text-[8px]">▼</div>
-                        </div>
-                        <div className="flex gap-4 pt-4 items-center">
-                          <button onClick={() => setView('details')} className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Back</button>
-                          <button onClick={handleFinalize} disabled={isProcessing || !selectedWard}
-                                  className="flex-1 bg-slate-900 text-white py-4 rounded-xl font-black text-[9px] uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all">
-                            {isProcessing ? 'Saving Node Data...' : 'Confirm Disposition'}
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {view === 'details' ? (
+                        <div className="flex gap-3">
+                          <button 
+                            onClick={() => setView('accept')} 
+                            className="flex-[3] bg-emerald-600 hover:bg-emerald-700 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-lg shadow-emerald-900/10 active:scale-[0.98] transition-all"
+                          >
+                            Accept Admission
+                          </button>
+                          <button 
+                            onClick={handleDivert} 
+                            className="flex-1 bg-white border-2 border-slate-100 text-rose-500 py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-50 hover:border-rose-100 transition-all"
+                          >
+                            Divert
                           </button>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+                      ) : (
+                        <div className="space-y-5 animate-in slide-in-from-bottom-4 duration-500">
+                          {/* STREAM SELECTOR */}
+                          <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-1">
+                            {['OUTPATIENT', 'INPATIENT', 'DIAGNOSTIC'].map((s) => (
+                              <button 
+                                key={s} 
+                                onClick={() => { setServiceStream(s); setSelectedWard(''); }}
+                                className={`flex-1 py-3.5 rounded-xl text-[10px] font-black uppercase transition-all ${
+                                  serviceStream === s ? 'bg-white text-emerald-600 shadow-sm scale-[1.02]' : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* DYNAMIC DROPDOWNS */}
+                          <div className="space-y-3">
+                            <div className="relative group">
+                              <select 
+                                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-5 text-[11px] font-black uppercase outline-none focus:border-emerald-500 focus:bg-white transition-all appearance-none cursor-pointer"
+                                value={selectedWard} 
+                                onChange={(e) => setSelectedWard(e.target.value)}
+                              >
+                                <option value="" className="text-slate-400">
+                                  {serviceStream === 'DIAGNOSTIC' ? '— Select Laboratory Resource —' : '— Select Admission Unit —'}
+                                </option>
+                                {serviceStream === 'DIAGNOSTIC' && diagnostics?.map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.unit_label} ({item.resource_type}) — {item.total_capacity - item.current_occupied} Free
+                                  </option>
+                                ))}
+                                {serviceStream === 'INPATIENT' && wardTypes?.map((w, i) => (
+                                  <option key={i} value={w.type}>{w.type} Ward</option>
+                                ))}
+                                {serviceStream === 'OUTPATIENT' && departments?.map(d => (
+                                  <option key={d.id} value={d.id}>{d.name} Department</option>
+                                ))}
+                              </select>
+                              <div className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-emerald-500 transition-colors">▼</div>
+                            </div>
+
+                            {serviceStream === 'INPATIENT' && selectedWard && (
+                              <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                                <div className="relative group">
+                                  <select 
+                                    className="w-full bg-emerald-50/50 border-2 border-emerald-100 rounded-2xl p-5 text-[11px] font-black uppercase outline-none focus:border-emerald-500 focus:bg-white appearance-none cursor-pointer transition-all"
+                                    value={selectedBed}
+                                    onChange={(e) => setSelectedBed(e.target.value)}
+                                  >
+                                    <option value="">Assign Bed Asset...</option>
+                                    {beds?.map(bed => (
+                                      <option key={bed.id} value={bed.id}>{bed.bed_label}</option>
+                                    ))}
+                                  </select>
+                                  <div className="absolute right-5 top-1/2 -translate-y-1/2 text-emerald-400 pointer-events-none">▼</div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* FOOTER ACTIONS */}
+                          <div className="flex gap-4 pt-4 items-center">
+                            <button 
+                              onClick={() => setView('details')} 
+                              className="px-6 py-2 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button 
+                              onClick={handleFinalize} 
+                              disabled={isProcessing || !selectedWard}
+                              className={`flex-1 py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl transition-all ${
+                                !selectedWard ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-slate-950 text-white hover:bg-emerald-600 active:scale-95'
+                              }`}
+                            >
+                              {isProcessing ? (
+                                <span className="flex items-center justify-center gap-2">
+                                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                  Syncing...
+                                </span>
+                              ) : 'Confirm Disposition'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </>
-);
+    </>
+  );
 };
 
 export default ReferralModal;
