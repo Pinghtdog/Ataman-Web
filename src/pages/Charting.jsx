@@ -23,6 +23,7 @@ import {
   MapPin,
   BrainCircuit,
   TrendingUp,
+  CheckCircle,
   BarChart3,
   CheckCircle2,
   Stethoscope,
@@ -77,6 +78,7 @@ const Charting = () => {
     plan: "",
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
 
   useEffect(() => {
     document.title = "Charting | ATAMAN Health";
@@ -271,6 +273,44 @@ const Charting = () => {
     return Math.abs(new Date(ageDifMs).getUTCFullYear() - 1970);
   };
 
+  // 1. Open the Portal and Copy ID
+  const initiatePhilHealthCheck = () => {
+    if (!patient.philhealth_id) return alert("No PhilHealth ID recorded.");
+    
+    // Copy ID to clipboard
+    navigator.clipboard.writeText(patient.philhealth_id);
+    alert(`ID ${patient.philhealth_id} copied to clipboard! Opening portal...`);
+    
+    // Open the portal
+    window.open("https://pcu.philhealth.gov.ph/", "_blank");
+    
+    // Open our confirmation modal
+    setIsVerificationModalOpen(true);
+  };
+
+  // 2. Save the Result to Database
+  const confirmVerification = async (status) => {
+    const { error } = await supabase
+      .from("users")
+      .update({ 
+        is_philhealth_verified: true,
+        philhealth_status: status, // 'ACTIVE' or 'INACTIVE'
+        updated_at: new Date().toISOString() 
+      })
+      .eq("id", patient.id);
+
+    if (!error) {
+      // Update local state to show the green shield immediately
+      setPatient(prev => ({ 
+        ...prev, 
+        is_philhealth_verified: true, 
+        philhealth_status: status 
+      }));
+      setIsVerificationModalOpen(false);
+      alert("Patient marked as Verified in System.");
+    }
+  };
+
   return (
     <div className="p-12 bg-[#F8FAFC] min-h-screen font-sans text-slate-800">
       {/* HEADER */}
@@ -420,13 +460,28 @@ const Charting = () => {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-4 mt-4">
+                <div className="flex gap-6 items-center">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    ID: {patient.philhealth_id || "NOT LINKED"}
+                    PHILHEALTH ID: {patient.philhealth_id || "NOT LINKED"}
                   </p>
-                  <span className="text-[10px] font-bold text-emerald-600 uppercase flex items-center gap-1.5">
-                    <Shield size={12} /> YAKAP Verified
-                  </span>
+                  
+                  {/* DYNAMIC VERIFICATION BADGE */}
+                  {patient.is_philhealth_verified ? (
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 uppercase bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
+                      <Shield size={12} fill="currentColor" /> YAKAP Verified ({patient.philhealth_status})
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={initiatePhilHealthCheck}
+                      className="flex items-center gap-2 text-[10px] font-bold text-orange-500 uppercase bg-orange-50 px-3 py-1 rounded-full border border-orange-100 hover:bg-orange-100 transition-colors"
+                    >
+                      <AlertCircle size={12} /> Verify Status
+                    </button>
+                  )}
+
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
+                    <Stethoscope size={12} /> Primary Doctor: Dr. Santos
+                  </div>
                 </div>
               </div>
             </div>
@@ -731,6 +786,49 @@ const Charting = () => {
           </div>
         </div>
       )}
+      {/* --- PHILHEALTH VERIFICATION MODAL --- */}
+      {isVerificationModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md p-10 animate-in zoom-in border border-white">
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm">
+                <Shield size={32} />
+              </div>
+              <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">
+                External Verification
+              </h3>
+              <p className="text-[11px] font-medium text-slate-400 mt-2 leading-relaxed">
+                You were redirected to the PhilHealth Portal. 
+                <br/>Please check the status for ID: 
+                <strong className="text-slate-800"> {patient.philhealth_id}</strong>
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => confirmVerification("ACTIVE")}
+                className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center justify-center gap-2"
+              >
+                <CheckCircle size={16} /> Mark as ACTIVE
+              </button>
+              
+              <button
+                onClick={() => confirmVerification("INACTIVE")}
+                className="w-full py-4 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
+              >
+                Mark as INACTIVE
+              </button>
+            </div>
+
+            <button
+              onClick={() => setIsVerificationModalOpen(false)}
+              className="w-full mt-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-rose-500"
+            >
+              Cancel Verification
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* --- ATTACHMENTS MODAL --- */}
       {showDocs && (
@@ -828,6 +926,8 @@ const DataRow = ({ label, value, color = "text-slate-800" }) => (
       {value}
     </span>
   </div>
+
+  
 );
 
 export default Charting;
