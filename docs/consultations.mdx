@@ -1,0 +1,53 @@
+---
+title: "Doctor Console"
+description: "Manage patient queues, view triage vitals, and record clinical notes."
+icon: "user-doctor"
+---
+
+## Overview
+
+The **Doctor Console** is the primary workspace for attending physicians at Naga City General Hospital. It integrates the live patient queue, electronic health records, and clinical decision support into a single view.
+
+### Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Live Queue" icon="list-ol">
+    Real-time view of patients waiting for consultation, sorted by arrival time.
+  </Card>
+  <Card title="Vitals Dashboard" icon="heart-pulse">
+    Instant access to BP, Heart Rate, Temp, Height, and Weight from Triage.
+  </Card>
+  <Card title="Clinical Notes" icon="file-medical">
+    Standardized SOAP recording with auto-saving drafts.
+  </Card>
+  <Card title="QR Scanning" icon="qrcode">
+    Rapid patient identification using the built-in camera scanner.
+  </Card>
+</CardGroup>
+
+## The Workflow
+
+### 1. Patient Selection
+
+Patients appear in the **"Upcoming Schedule"** list automatically once triaged by a BHW.
+
+- Click **"Locate"** to search for a specific patient by name or ID.
+- Use the **Scanner** button to scan a patient's ID card directly.
+
+### 2. Clinical Workspace
+
+Once a patient is selected, the interface splits into two panels:
+
+| Panel           | Function                                                                                           |
+| :-------------- | :------------------------------------------------------------------------------------------------- |
+| **Left Panel**  | Displays patient demographics (Age, Sex, PhilHealth Status) and **Vitals** recorded during triage. |
+| **Right Panel** | The **Clinical Decision** form. Enter the _Diagnosis_, _Lab Findings_, and _Treatment Plan_ here.  |
+
+<Warning>
+  **Important:** You must enter a **Diagnosis** before the "Save & Close" button
+  becomes active.
+</Warning>
+
+### 3. Verification
+
+The console automatically checks the patient's **PhilHealth Status** and displays a verification badge next to their profile photo.

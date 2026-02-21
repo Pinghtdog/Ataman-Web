@@ -242,7 +242,7 @@ const Consultations = () => {
     setTriageInfo(latestNote);
   };
 
-  const handleSaveConsultation = async () => {
+const handleSaveConsultation = async () => {
     if (!consultationData.diagnosis) return alert("Diagnosis is required.");
     setIsSaving(true);
     const {
@@ -275,18 +275,29 @@ const Consultations = () => {
           .from("bookings")
           .update({ status: "completed" })
           .eq("id", activeBookingId);
+          
+        // --- NEW CODE: OPTIMISTIC UI UPDATE ---
+        // Immediately filter this specific booking ID out of the visible queue
+        setUnifiedQueue((prevQueue) => 
+          prevQueue.filter((item) => item.original_id !== activeBookingId)
+        );
       }
 
       alert("Consultation Saved Successfully");
+      
       setConsultationData({
         diagnosis: "",
         medical_treatment: "",
         lab_findings: "",
         notes: "",
       });
+      
       setActivePatient(null);
       setActiveBookingId(null);
-      initializeConsole();
+      
+      // Optional: You can keep this to ensure DB sync, 
+      // but the setUnifiedQueue above makes the UI feel instant.
+      initializeConsole(); 
     } else {
       alert("Failed to save consultation.");
     }
