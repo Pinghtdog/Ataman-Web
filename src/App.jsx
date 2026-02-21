@@ -16,6 +16,7 @@ import AssistedBooking from "./pages/AssistedBooking";
 import Analytics from "./pages/Analytics";
 // import MedicalRecords from "./pages/MedicalRecords";
 import Consultations from "./pages/Consultations";
+import MedicalRecord from "./pages/MedicalRecord";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -109,7 +110,7 @@ export default function App() {
             <Route path="services" element={<ServiceAndFacilities />} />
             <Route path="telemed" element={<Telemed />} />
             <Route path="charting" element={<Charting />} />
-            {/* <Route path="records" element={<MedicalRecords />} /> */}
+            <Route path="medical-records" element={<MedicalRecord />} />
             <Route path="settings" element={<Settings />} />
             <Route path="assisted-booking" element={<AssistedBooking />} />
             <Route path="analytics" element={<Analytics />} />
