@@ -15,6 +15,8 @@ import {
   QrCode,
   User,
   ArrowRight,
+  Activity,
+  MapPin,
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -36,13 +38,17 @@ const AssistedBooking = () => {
   const [residentSearch, setSearchTerm] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedResident, setSelectedResident] = useState(null);
+
+  // Streams
   const [outpatientReferrals, setOutpatientReferrals] = useState([]);
+  const [appBookings, setAppBookings] = useState([]);
 
   const [availableDoctors, setAvailableDoctors] = useState([]);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const [facilityQueueCount, setFacilityQueueCount] = useState(0);
 
   const [showScanner, setShowScanner] = useState(false);
+  const [triageData, setTriageData] = useState(null);
 
   const fetchData = async () => {
     try {
@@ -66,6 +72,7 @@ const AssistedBooking = () => {
           closing: staff.facilities.closing_time,
         });
 
+        // 1. Get current queue length
         const { count } = await supabase
           .from("bookings")
           .select("*", { count: "exact", head: true })
@@ -73,15 +80,19 @@ const AssistedBooking = () => {
           .eq("status", "pending");
         setFacilityQueueCount(count || 0);
 
-        // FIXED 400 ERROR: Split the query to avoid invalid implicit joins
+        // 2. Fetch available doctors safely
         const { data: docs } = await supabase
           .from("facility_staff")
-          .select(`user_id, role, users(first_name, last_name)`)
+          .select(`user_id, role`)
           .eq("facility_id", staff.facility_id)
           .eq("role", "DOCTOR");
 
         if (docs && docs.length > 0) {
           const docUserIds = docs.map((d) => d.user_id);
+          const { data: docUsers } = await supabase
+            .from("users")
+            .select("id, first_name, last_name")
+            .in("id", docUserIds);
           const { data: telemedDocs } = await supabase
             .from("telemed_doctors")
             .select("user_id, id, specialty, current_wait_minutes")
@@ -89,6 +100,10 @@ const AssistedBooking = () => {
 
           const mergedDocs = docs.map((d) => ({
             ...d,
+            users: docUsers?.find((u) => u.id === d.user_id) || {
+              first_name: "Unknown",
+              last_name: "Doctor",
+            },
             telemed_profile: telemedDocs?.find((t) => t.user_id === d.user_id),
           }));
           setAvailableDoctors(mergedDocs);
@@ -96,6 +111,7 @@ const AssistedBooking = () => {
           setAvailableDoctors([]);
         }
 
+        // 3. Fetch Outpatient Referrals
         const { data: refs } = await supabase
           .from("referrals")
           .select(
@@ -105,13 +121,24 @@ const AssistedBooking = () => {
           .eq("status", "PENDING")
           .limit(10);
         setOutpatientReferrals(refs || []);
+
+        // 4. Fetch App Bookings (Smart Triage)
+        const { data: incomingAppBookings } = await supabase
+          .from("bookings")
+          .select("*, users(*)")
+          .eq("facility_id", staff.facility_id)
+          .eq("status", "pending")
+          .is("assisted_by", null) // Ensures it hasn't been processed by staff yet
+          .limit(10);
+        setAppBookings(incomingAppBookings || []);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Fetch Data Error:", err);
     }
   };
 
   useEffect(() => {
+    document.title = "Assisted Booking | ATAMAN";
     fetchData();
     if (location.state?.intakeComplete) {
       setSelectedResident(location.state.patient);
@@ -125,8 +152,27 @@ const AssistedBooking = () => {
     setSelectedResident(null);
     setSearchTerm("");
     setSelectedDoctor(null);
+    setTriageData(null);
     navigate(location.pathname, { replace: true, state: {} });
     fetchData();
+  };
+
+  const handleSelectPatient = async (patientData, nextStep = 2) => {
+    // Ensure we are working with a single object, not an array
+    const pData = Array.isArray(patientData) ? patientData[0] : patientData;
+    setSelectedResident(pData);
+    setStep(nextStep);
+
+    // Fetch their latest AI Triage from the mobile app
+    const { data } = await supabase
+      .from("triage_results")
+      .select("*")
+      .eq("user_id", pData.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    setTriageData(data);
   };
 
   // SEARCH & SCAN LOGIC
@@ -156,8 +202,7 @@ const AssistedBooking = () => {
 
     if (!error && data && data.length > 0) {
       if (data.length === 1) {
-        setSelectedResident(data[0]);
-        setStep(2);
+        handleSelectPatient(data[0], 2);
       } else {
         setSuggestions(data);
       }
@@ -218,20 +263,33 @@ const AssistedBooking = () => {
       data: { user },
     } = await supabase.auth.getUser();
 
-    // FINAL STATUS: Queue mechanism triggers the Doctor Interface
     const { error } = await supabase.from("bookings").insert({
       user_id: selectedResident.id,
       facility_id: myFacility.id,
-      status: "pending", // "pending" drops it into the Doctor's Queue
+      status: "pending",
       priority_token: refToken,
       nature_of_visit: "Assisted Intake",
       assisted_by: user.id,
-      assigned_doctor_id: selectedDoctor.telemed_profile?.id, // Targets specific doctor
+      assigned_doctor_id: selectedDoctor.telemed_profile?.id,
       appointment_time: new Date().toISOString(),
     });
 
-    if (!error) setBookingStatus("success");
-    else alert("Handshake Error: " + error.message);
+    if (!error) {
+      // If this was an app booking, we need to mark the old app booking as completed/merged
+      // so it leaves the "Expected App Walk-ins" stream.
+      const appBookingMatches = appBookings.filter(
+        (b) => b.user_id === selectedResident.id,
+      );
+      for (const oldBooking of appBookingMatches) {
+        await supabase
+          .from("bookings")
+          .update({ status: "completed" })
+          .eq("id", oldBooking.id);
+      }
+      setBookingStatus("success");
+    } else {
+      alert("Handshake Error: " + error.message);
+    }
     setLoading(false);
   };
 
@@ -308,10 +366,9 @@ const AssistedBooking = () => {
                       <div
                         key={p.id}
                         onClick={() => {
-                          setSelectedResident(p);
+                          handleSelectPatient(p, 2);
                           setSearchTerm(`${p.first_name} ${p.last_name}`);
                           setSuggestions([]);
-                          setStep(2);
                         }}
                         className="p-4 hover:bg-emerald-50 cursor-pointer flex justify-between items-center border-b border-gray-50 last:border-0 group"
                       >
@@ -358,56 +415,126 @@ const AssistedBooking = () => {
             </button>
           </div>
 
-          {/* OUTPATIENT STREAM (HORIZONTAL QUEUE) */}
+          {/* APP BOOKINGS / SMART TRIAGE STREAM */}
           <div className="pt-4">
             <div className="flex justify-between items-center mb-4 px-2">
-              <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <ClipboardList size={14} /> Outpatient Referral Stream (
-                {outpatientReferrals.length})
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <Activity size={14} className="text-[#00695C]" /> Expected App
+                Walk-ins ({appBookings.length})
               </h3>
             </div>
 
-            <div className="flex gap-4 overflow-x-auto pb-6 no-scrollbar">
+            <div className="flex gap-4 overflow-x-auto pb-6 custom-scrollbar">
+              {appBookings.length === 0 ? (
+                <div className="w-full p-8 border-2 border-dashed border-slate-200 rounded-[2rem] text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                  No pending app bookings
+                </div>
+              ) : (
+                appBookings.map((booking) => {
+                  const pUser = Array.isArray(booking.users)
+                    ? booking.users[0]
+                    : booking.users;
+                  return (
+                    <div
+                      key={booking.id}
+                      onClick={() => handleSelectPatient(pUser, 2)}
+                      className="min-w-[320px] bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg hover:border-[#00695C] cursor-pointer transition-all group relative overflow-hidden"
+                    >
+                      <div
+                        className={`absolute left-0 top-0 bottom-0 w-1.5 ${booking.triage_priority === "Red" ? "bg-rose-500" : "bg-emerald-400"}`}
+                      />
+
+                      <div className="flex justify-between items-start mb-4 pl-2">
+                        <span className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                          APP TRIAGE
+                        </span>
+                        <span className="bg-slate-50 text-slate-400 px-2 py-1 rounded-md text-[9px] font-bold uppercase">
+                          <Clock size={12} />
+                        </span>
+                      </div>
+                      <div className="mb-4 pl-2">
+                        <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight truncate">
+                          {pUser?.first_name} {pUser?.last_name}
+                        </h4>
+                        <p
+                          className={`text-[10px] font-bold uppercase tracking-widest mt-1 truncate ${booking.triage_priority === "Red" ? "text-rose-500" : "text-emerald-500"}`}
+                        >
+                          Priority: {booking.triage_priority || "Standard"}
+                        </p>
+                      </div>
+                      <div className="flex justify-between items-center pt-4 border-t border-slate-50 pl-2">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate max-w-[180px] italic">
+                          "
+                          {booking.chief_complaint ||
+                            booking.triage_result ||
+                            "Awaiting details..."}
+                          "
+                        </span>
+                        <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-[#00695C] group-hover:text-white transition-colors">
+                          <ChevronRight size={16} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* OUTPATIENT STREAM (HORIZONTAL QUEUE) */}
+          <div className="pt-2">
+            <div className="flex justify-between items-center mb-4 px-2">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <ClipboardList size={14} className="text-[#00695C]" />{" "}
+                Outpatient Referral Stream ({outpatientReferrals.length})
+              </h3>
+            </div>
+
+            <div className="flex gap-4 overflow-x-auto pb-6 custom-scrollbar">
               {outpatientReferrals.length === 0 ? (
-                <div className="w-full p-10 border-2 border-dashed border-slate-200 rounded-[2rem] text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                <div className="w-full p-8 border-2 border-dashed border-slate-200 rounded-[2rem] text-center text-[10px] font-bold text-slate-300 uppercase tracking-widest">
                   No active incoming referrals
                 </div>
               ) : (
-                outpatientReferrals.map((ref) => (
-                  <div
-                    key={ref.id}
-                    onClick={() => {
-                      setSelectedResident(ref.users);
-                      setStep(2);
-                    }}
-                    className="min-w-[320px] bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg hover:border-[#00695C] cursor-pointer transition-all group"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <span className="bg-orange-50 text-orange-600 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                        EXTERNAL
-                      </span>
-                      <span className="bg-slate-50 text-slate-400 px-2 py-1 rounded-md text-[9px] font-bold uppercase">
-                        <Clock size={12} />
-                      </span>
-                    </div>
-                    <div className="mb-4">
-                      <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight truncate">
-                        {ref.users?.first_name} {ref.users?.last_name}
-                      </h4>
-                      <p className="text-[10px] font-bold text-[#00695C] uppercase tracking-widest mt-1 truncate">
-                        From: {ref.origin?.name}
-                      </p>
-                    </div>
-                    <div className="flex justify-between items-center pt-4 border-t border-slate-50">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate max-w-[180px]">
-                        "{ref.chief_complaint}"
-                      </span>
-                      <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-[#00695C] group-hover:text-white transition-colors">
-                        <ChevronRight size={16} />
+                outpatientReferrals.map((ref) => {
+                  const rUser = Array.isArray(ref.users)
+                    ? ref.users[0]
+                    : ref.users;
+                  return (
+                    <div
+                      key={ref.id}
+                      onClick={() => handleSelectPatient(rUser, 2)}
+                      className="min-w-[320px] bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg hover:border-[#00695C] cursor-pointer transition-all group relative overflow-hidden"
+                    >
+                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-orange-400" />
+
+                      <div className="flex justify-between items-start mb-4 pl-2">
+                        <span className="bg-orange-50 text-orange-600 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                          EXTERNAL
+                        </span>
+                        <span className="bg-slate-50 text-slate-400 px-2 py-1 rounded-md text-[9px] font-bold uppercase">
+                          <Clock size={12} />
+                        </span>
+                      </div>
+                      <div className="mb-4 pl-2">
+                        <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight truncate">
+                          {rUser?.first_name} {rUser?.last_name}
+                        </h4>
+                        <p className="text-[10px] font-bold text-[#00695C] uppercase tracking-widest mt-1 truncate">
+                          From: {ref.origin?.name}
+                        </p>
+                      </div>
+                      <div className="flex justify-between items-center pt-4 border-t border-slate-50 pl-2">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate max-w-[180px] italic">
+                          "{ref.chief_complaint}"
+                        </span>
+                        <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-[#00695C] group-hover:text-white transition-colors">
+                          <ChevronRight size={16} />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -494,8 +621,45 @@ const AssistedBooking = () => {
             <div className="col-span-8 flex flex-col gap-6 min-h-0">
               {/* STEP 2: CHARTING */}
               <div
-                className={`bg-white p-10 rounded-[2.5rem] shadow-sm border transition-all ${step === 3 ? "border-[#00695C] shadow-lg ring-4 ring-emerald-50" : "border-slate-100 opacity-50"}`}
+                className={`bg-white p-10 rounded-[2.5rem] shadow-sm border transition-all ${step === 3 ? "border-[#00695C] shadow-lg ring-4 ring-emerald-50" : "border-slate-100 opacity-50 pointer-events-none"}`}
               >
+                {/* AI Triage Display (Only shows if app data exists) */}
+                {triageData && (
+                  <div className="mb-8 p-6 bg-slate-900 rounded-[1.5rem] text-white shadow-inner relative overflow-hidden animate-in fade-in zoom-in duration-300">
+                    <div className="absolute -right-4 -top-4 opacity-10">
+                      <Activity size={100} />
+                    </div>
+                    <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 relative z-10">
+                      Mobile App AI Triage
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4 relative z-10">
+                      <div>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold mb-1">
+                          Priority
+                        </p>
+                        <p
+                          className={`text-sm font-black uppercase tracking-widest ${triageData.category === "Red" || triageData.category === "Emergency" ? "text-rose-500" : triageData.category === "Yellow" || triageData.category === "Urgent" ? "text-amber-400" : "text-emerald-400"}`}
+                        >
+                          {triageData.category ||
+                            triageData.urgency ||
+                            "Standard"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold mb-1">
+                          Reported Symptoms
+                        </p>
+                        <p className="text-xs font-medium text-slate-200 italic line-clamp-2">
+                          "
+                          {triageData.raw_symptoms ||
+                            triageData.chief_complaint}
+                          "
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-between items-center">
                   <div>
                     <h3 className="text-xl font-black text-slate-800 uppercase italic flex items-center gap-3">
