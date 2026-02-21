@@ -18,7 +18,8 @@ import {
   UserPlus,
 } from "lucide-react";
 
-const DashboardLayout = () => { // Removed { userRole } prop (we fetch it internally now)
+const DashboardLayout = () => {
+  // Removed { userRole } prop (we fetch it internally now)
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -77,7 +78,7 @@ const DashboardLayout = () => { // Removed { userRole } prop (we fetch it intern
 
         if (staffData?.facilities) {
           const fId = staffData.facility_id;
-          
+
           // Set Role & Facility
           setUserRole(staffData.role); // <--- Store Role
           setHospitalCode(staffData.facilities.short_code);
@@ -117,19 +118,39 @@ const DashboardLayout = () => { // Removed { userRole } prop (we fetch it intern
   const navItems = [
     { name: "Overview", path: "/", icon: <LayoutDashboard size={18} /> },
     { name: "Bed Management", path: "/beds", icon: <BedDouble size={18} /> },
-    { name: "Referral Center", path: "/referrals", icon: <PhoneIncoming size={18} /> },
-    { name: "Service & Facilities", path: "/services", icon: <Stethoscope size={18} /> },
-    { name: "Telemedicine Hub", path: "/telemed", icon: <MapIcon size={18} /> },
-    { name: "Digital Charting", path: "/charting", icon: <FileText size={18} /> },
-    
-    // --- CONDITIONALLY ADD DOCTOR CONSOLE ---
-    ...(userRole === 'DOCTOR' ? [{ 
-        name: "Doctor Console", 
-        path: "/consultations", 
-        icon: <Stethoscope size={18} className="text-emerald-400" /> // Added color to distinguish
-    }] : []),
+    {
+      name: "Referral Center",
+      path: "/referrals",
+      icon: <PhoneIncoming size={18} />,
+    },
+    {
+      name: "Service & Facilities",
+      path: "/services",
+      icon: <Stethoscope size={18} />,
+    },
+    // { name: "Telemedicine Hub", path: "/telemed", icon: <MapIcon size={18} /> },
+    {
+      name: "Digital Charting",
+      path: "/charting",
+      icon: <FileText size={18} />,
+    },
 
-    { name: "Assisted Booking", path: "/assisted-booking", icon: <UserPlus size={18} /> },
+    // --- CONDITIONALLY ADD DOCTOR CONSOLE ---
+    ...(userRole === "DOCTOR"
+      ? [
+          {
+            name: "Doctor Console",
+            path: "/consultations",
+            icon: <Stethoscope size={18} />, // Added color to distinguish
+          },
+        ]
+      : []),
+
+    {
+      name: "Assisted Booking",
+      path: "/assisted-booking",
+      icon: <UserPlus size={18} />,
+    },
     { name: "Analytics", path: "/analytics", icon: <BarChart3 size={18} /> },
     { name: "Settings", path: "/settings", icon: <Settings size={18} /> },
   ];

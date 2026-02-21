@@ -106,19 +106,20 @@ const Settings = () => {
 
   return (
     <div className="p-12 bg-[#F8FAFC] min-h-screen font-sans">
-      <div className="flex justify-between items-center mb-10">
+      {/* HEADER */}
+      <div className="mb-10 flex justify-between items-end shrink-0">
         <div>
-          <h1 className="text-4xl font-extrabold text-slate-800 tracking-tighter leading-none">
+          <h1 className="text-4xl font-black text-slate-800 uppercase tracking-tighter italic leading-none">
             System Settings
           </h1>
-          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-2">
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.3em] mt-3">
             Node Configuration & Staff Registry
           </p>
         </div>
         {currentUserRole === "ADMIN" && (
-          <div className="bg-emerald-50 text-emerald-600 px-6 py-2 rounded-2xl border border-emerald-100 flex items-center gap-2">
+          <div className="bg-[#00695C]/10 text-[#00695C] px-6 py-2.5 rounded-2xl border border-[#00695C]/20 flex items-center gap-2">
             <ShieldCheck size={16} />
-            <span className="text-[10px] font-bold uppercase tracking-widest">
+            <span className="text-[10px] font-black uppercase tracking-widest">
               Administrator Node
             </span>
           </div>

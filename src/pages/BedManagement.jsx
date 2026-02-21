@@ -182,14 +182,18 @@ const BedManagement = () => {
   return (
     <div className="p-12 bg-[#F8FAFC] min-h-screen font-sans">
       <div className="flex justify-between items-start mb-10">
-        <div>
-          <h1 className="text-4xl font-black text-slate-800 tracking-tighter">
-            Bed Management
-          </h1>
-          <div className="flex items-center gap-3 mt-1">
-            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">
-              Live Asset Control
+        {/* HEADER */}
+        <div className="mb-10 flex justify-between items-end shrink-0">
+          <div>
+            <h1 className="text-4xl font-black text-slate-800 uppercase tracking-tighter italic leading-none">
+              Bed Management
+            </h1>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.3em] mt-3">
+              Live Asset Control & Patient Placement
             </p>
+          </div>
+          <div className="flex gap-4">
+            {/* Your existing search and filter inputs go here */}
           </div>
         </div>
 
