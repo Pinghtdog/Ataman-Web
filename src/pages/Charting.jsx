@@ -110,6 +110,7 @@ const Charting = () => {
   };
 
   // 2. SEARCH LOGIC
+  // 2. SEARCH LOGIC
   const handleSearch = async (e, directTerm = null) => {
     if (e) e.preventDefault();
     const termToUse = directTerm || searchTerm;
@@ -120,24 +121,32 @@ const Charting = () => {
     setPatient(null);
     setSearchResults([]);
 
-    const words = cleanTerm.split(" ");
     let query = supabase.from("users").select("*");
 
-    const isID =
-      /^[0-9a-f-]{8,}$/i.test(cleanTerm) || cleanTerm.startsWith("ATAM-");
+    // Check if the term is a valid UUID format (e.g. c7b3d8e0-5e0b...)
+    const isUUID =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        cleanTerm
+      );
 
-    if (isID) {
-      query = query.or(
-        `id.eq.${cleanTerm},medical_id.eq.${cleanTerm},philhealth_id.eq.${cleanTerm}`,
-      );
-    } else if (words.length === 1) {
-      query = query.or(
-        `first_name.ilike.%${cleanTerm}%,last_name.ilike.%${cleanTerm}%`,
-      );
+    if (isUUID) {
+      // If it looks like a UUID, search the primary 'id' column
+      query = query.eq("id", cleanTerm);
     } else {
-      query = query
-        .ilike("first_name", `%${words[0]}%`)
-        .ilike("last_name", `%${words[words.length - 1]}%`);
+      // If it's NOT a UUID (e.g. "ATAM-123" or "Maria"), DO NOT search the 'id' column
+      // Search only text-based columns to avoid Type Mismatch Error (400)
+      const words = cleanTerm.split(" ");
+      if (words.length > 1) {
+        // Name search (First + Last)
+        query = query
+          .ilike("first_name", `%${words[0]}%`)
+          .ilike("last_name", `%${words[words.length - 1]}%`);
+      } else {
+        // ID string or Single Name search
+        query = query.or(
+          `medical_id.eq.${cleanTerm},philhealth_id.eq.${cleanTerm},first_name.ilike.%${cleanTerm}%,last_name.ilike.%${cleanTerm}%`
+        );
+      }
     }
 
     const { data, error } = await query;
@@ -150,21 +159,26 @@ const Charting = () => {
     }
 
     setLoading(false);
-    setShowScanner(false);
+    // Only hide scanner if we actually ran a search successfully or intentionally
+    if (showScanner) setShowScanner(false);
   };
 
+  // --- UPDATED SCANNER LOGIC ---
   const handleQrScan = (detectedCodes) => {
-    if (
-      detectedCodes &&
-      detectedCodes.length > 0 &&
-      detectedCodes[0]?.rawValue
-    ) {
+    if (detectedCodes && detectedCodes.length > 0) {
       const rawValue = detectedCodes[0].rawValue;
-      try {
-        const qrData = JSON.parse(rawValue);
-        handleSearch(null, qrData.id || qrData.data || rawValue);
-      } catch (e) {
-        handleSearch(null, rawValue);
+      if (rawValue) {
+        // 1. Close scanner IMMEDIATELY to prevent multiple scans
+        setShowScanner(false);
+        
+        // 2. Process Data
+        try {
+          const qrData = JSON.parse(rawValue);
+          // Prioritize the extracted ID, fallback to raw string
+          handleSearch(null, qrData.id || qrData.data || rawValue);
+        } catch (e) {
+          handleSearch(null, rawValue);
+        }
       }
     }
   };
@@ -182,7 +196,7 @@ const Charting = () => {
       .maybeSingle();
     setPatientBed(bedInfo);
 
-    // Fetch History for everyone, but we filter what is displayed in the render
+    // Fetch History
     const { data: notes } = await supabase
       .from("clinical_notes")
       .select("*")
@@ -261,7 +275,6 @@ const Charting = () => {
       alert("Encounter records synchronized.");
       setIsEntryModalOpen(false);
       selectPatient(patient);
-      // Return to assisted booking if we came from there
       if (location.state?.intakeMode) {
         navigate("/assisted-booking", {
           state: { intakeComplete: true, patient },
