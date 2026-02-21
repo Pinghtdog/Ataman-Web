@@ -13,56 +13,49 @@ import {
   User,
   X,
   Activity,
-  Zap,
-  Building2,
+  ShieldCheck,
+  ScanFace,
+  Stethoscope,
   ChevronRight,
   Share2,
+  ListFilter,
+  ClipboardList,
+  AlertCircle,
+  UserCheck,
+  Phone,
+  CalendarDays,
+  Award,
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import Groq from "groq-sdk";
-
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY_ASSISTED_BOOKING;
-const groq = new Groq({ apiKey: GROQ_API_KEY, dangerouslyAllowBrowser: true });
+import { useNavigate, useLocation } from "react-router-dom";
 
 const AssistedBooking = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // System States
   const [loading, setLoading] = useState(false);
   const [bookingStatus, setBookingStatus] = useState("idle");
-
-  const [showScanner, setShowScanner] = useState(false);
+  const [step, setStep] = useState(1);
   const [myFacility, setMyFacility] = useState({
     id: null,
     name: "Loading Center...",
-    latitude: null,
-    longitude: null,
+    short_code: "NAGA",
   });
 
+  // Search & Registry States
   const [residentSearch, setResidentSearch] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [selectedResident, setSelectedResident] = useState(null);
-  const [complaint, setComplaint] = useState("");
+  const [outpatientReferrals, setOutpatientReferrals] = useState([]);
 
-  const [hospitals, setHospitals] = useState([]);
-  const [recommendations, setRecommendations] = useState([]);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [selectedTarget, setSelectedTarget] = useState(null);
+  // Clinician & Queue States
+  const [availableDoctors, setAvailableDoctors] = useState([]);
+  const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [facilityQueueCount, setFacilityQueueCount] = useState(0);
 
-  // haversine formula
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    if (!lat1 || !lon1 || !lat2 || !lon2) return "---";
-    const R = 6371;
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * (Math.PI / 180)) *
-        Math.cos(lat2 * (Math.PI / 180)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return (R * c).toFixed(1);
-  };
-
-  const initPortal = async () => {
+  // 1. DATA INITIALIZATION
+  const fetchData = async () => {
     try {
       const {
         data: { user },
@@ -75,30 +68,48 @@ const AssistedBooking = () => {
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (staff) setMyFacility({ id: staff.facility_id, ...staff.facilities });
+      if (staff) {
+        setMyFacility({
+          id: staff.facility_id,
+          name: staff.facilities.name,
+          short_code: staff.facilities.short_code,
+          opening: staff.facilities.opening_time,
+          closing: staff.facilities.closing_time,
+          total_queue: staff.facilities.current_queue_length,
+        });
 
-      const { data: facs } = await supabase
-        .from("facilities")
-        .select("*")
-        .eq("type", "hospital");
+        // Get Live Queue Count for Token generation
+        const { count } = await supabase
+          .from("bookings")
+          .select("*", { count: "exact", head: true })
+          .eq("facility_id", staff.facility_id)
+          .eq("status", "pending");
+        setFacilityQueueCount(count || 0);
 
-      if (facs) {
-        const hospitalIds = facs.map((h) => h.id);
-        const [bedsRes, resourcesRes] = await Promise.all([
-          supabase.from("beds").select("*").in("facility_id", hospitalIds),
-          supabase
-            .from("facility_resources")
-            .select("*")
-            .in("facility_id", hospitalIds),
-        ]);
+        // Fetch Doctors + Their Specialties
+        const { data: docs } = await supabase
+          .from("facility_staff")
+          .select(
+            `
+            user_id, role, 
+            users(first_name, last_name),
+            telemed_doctors!user_id(specialty, current_wait_minutes, is_online)
+          `,
+          )
+          .eq("facility_id", staff.facility_id)
+          .eq("role", "DOCTOR");
+        setAvailableDoctors(docs || []);
 
-        const combined = facs.map((h) => ({
-          ...h,
-          beds: bedsRes.data?.filter((b) => b.facility_id === h.id) || [],
-          facility_resources:
-            resourcesRes.data?.filter((r) => r.facility_id === h.id) || [],
-        }));
-        setHospitals(combined);
+        // Fetch Referrals
+        const { data: refs } = await supabase
+          .from("referrals")
+          .select(
+            "*, users!patient_id(*), origin:facilities!origin_facility_id(name)",
+          )
+          .eq("destination_facility_id", staff.facility_id)
+          .eq("status", "PENDING")
+          .limit(5);
+        setOutpatientReferrals(refs || []);
       }
     } catch (err) {
       console.error("Initialization Error:", err);
@@ -106,9 +117,14 @@ const AssistedBooking = () => {
   };
 
   useEffect(() => {
-    initPortal();
-  }, []);
+    fetchData();
+    if (location.state?.intakeComplete) {
+      setSelectedResident(location.state.patient);
+      setStep(4);
+    }
+  }, [location.state]);
 
+  // 2. RESIDENT SEARCH (Fixed Searching Logic)
   useEffect(() => {
     const findResidents = async () => {
       if (residentSearch.length < 2 || selectedResident) return;
@@ -116,7 +132,7 @@ const AssistedBooking = () => {
         .from("users")
         .select("*")
         .or(
-          `first_name.ilike.%${residentSearch}%,last_name.ilike.%${residentSearch}%,philhealth_id.eq.${residentSearch}`,
+          `first_name.ilike.%${residentSearch}%,last_name.ilike.%${residentSearch}%,philhealth_id.eq.${residentSearch},medical_id.eq.${residentSearch}`,
         )
         .limit(5);
       setSuggestions(data || []);
@@ -125,371 +141,439 @@ const AssistedBooking = () => {
     return () => clearTimeout(timer);
   }, [residentSearch, selectedResident]);
 
-  useEffect(() => {
-    if (complaint.length > 15 && selectedResident) {
-      handleAIAnalysis();
-    }
-  }, [complaint]);
-
-  const handleAIAnalysis = async () => {
-    if (!complaint.trim() || !selectedResident) return;
-    setIsAnalyzing(true);
-
-    try {
-      const facilityContext = hospitals.map((h) => {
-        const total = h.beds.length;
-        const avail = h.beds.filter((b) => b.status === "available").length;
-        const load =
-          total > 0 ? Math.round(((total - avail) / total) * 100) : 0;
-
-        return {
-          name: h.name,
-          load: `${load}%`,
-          is_critical: load >= 90,
-          available_beds: avail,
-          equipment: h.facility_resources
-            .filter((r) => r.status === "ONLINE")
-            .map((r) => r.resource_type)
-            .join(", "),
-        };
-      });
-
-      const prompt = `You are a Naga City Triage AI. 
-      Patient: ${selectedResident.first_name} ${selectedResident.last_name}
-      Complaint: "${complaint}"
-      Hospitals: ${JSON.stringify(facilityContext)}
-
-      TASK: Rank the top 3 best-suited hospitals. 
-      RULES:
-      1. If load > 90%, avoid unless life-threatening (Chest pain, unconscious).
-      2. Return ONLY a raw JSON array. No conversational text.
-      
-      FORMAT: [{"name": "Hospital Name", "reason": "1 sentence medical reason", "score": 95, "urgency": "High"}]`;
-
-      const chat = await groq.chat.completions.create({
-        messages: [{ role: "system", content: prompt }],
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.1, // Lower temperature = more consistent JSON
-      });
-
-      const responseText = chat.choices[0].message.content;
-
-      // --- ROBUST EXTRACTION (Fixes the SyntaxError) ---
-      // This looks for the first '[' and the last ']' to ignore any "Based on..." text
-      const jsonStart = responseText.indexOf("[");
-      const jsonEnd = responseText.lastIndexOf("]") + 1;
-
-      if (jsonStart === -1 || jsonEnd === 0) {
-        throw new Error("AI did not return a valid JSON array");
-      }
-
-      const cleanJson = responseText.substring(jsonStart, jsonEnd);
-      setRecommendations(JSON.parse(cleanJson));
-    } catch (e) {
-      console.error("AI Analysis Failed", e);
-      // Fallback: If AI fails, show a manual referral option to NCGH
-      setRecommendations([
-        {
-          name: "Naga City General Hospital (NCGH)",
-          reason: "Primary tertiary facility. Proceed for immediate triage.",
-          score: 100,
-          urgency: "Emergency",
-        },
-      ]);
-    } finally {
-      setIsAnalyzing(false);
-    }
+  // 3. WORKFLOW HANDLERS
+  const handleLivenessProtocol = () => {
+    // Copy to clipboard for staff convenience
+    navigator.clipboard.writeText(selectedResident.philhealth_id);
+    window.open("https://pcu.philhealth.gov.ph/consent", "_blank");
+    setStep(2);
   };
 
-  const handleFinalize = async () => {
-    if (!selectedTarget) return;
+  const verifyPhilHealth = async () => {
     setLoading(true);
-
-    const hospitalRecord = hospitals.find(
-      (h) => h.name === selectedTarget.name,
-    );
-    const refID = `AT-${Math.floor(Math.random() * 9000) + 1000}`;
-
-    const { error } = await supabase.from("referrals").insert({
-      reference_number: refID,
-      patient_id: selectedResident.id,
-      origin_facility_id: myFacility.id,
-      destination_facility_id: hospitalRecord?.id || 1,
-      chief_complaint: complaint,
-      status: "PENDING",
-    });
-
-    if (!error) setBookingStatus("success");
-    else alert("Database Error: " + error.message);
+    await supabase
+      .from("users")
+      .update({
+        is_philhealth_verified: true,
+        philhealth_verified_at: new Date().toISOString(),
+      })
+      .eq("id", selectedResident.id);
+    setStep(3);
     setLoading(false);
   };
 
-  if (bookingStatus === "success") {
+  const finalizeHandover = async () => {
+    if (!selectedDoctor || !selectedResident) return;
+    setLoading(true);
+
+    // Generate specific Priority Token: [HOSP-CODE]-[QUEUE-POS]
+    const queuePos = (facilityQueueCount + 1).toString().padStart(3, "0");
+    const refToken = `${myFacility.short_code}-${queuePos}`;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const { error } = await supabase.from("bookings").insert({
+      user_id: selectedResident.id,
+      facility_id: myFacility.id,
+      status: "pending",
+      priority_token: refToken,
+      nature_of_visit: "Assisted Intake",
+      assisted_by: user.id,
+      appointment_time: new Date().toISOString(),
+    });
+
+    if (!error) {
+      // Increment Facility Queue Length
+      await supabase
+        .from("facilities")
+        .update({ current_queue_length: facilityQueueCount + 1 })
+        .eq("id", myFacility.id);
+      setBookingStatus("success");
+    } else {
+      alert("Handshake Error: " + error.message);
+    }
+    setLoading(false);
+  };
+
+  if (bookingStatus === "success")
     return (
-      <div className="p-10 bg-[#F8FAFC] min-h-screen flex items-center justify-center font-sans">
-        <div className="bg-white p-12 rounded-[3rem] shadow-2xl border border-gray-100 text-center max-w-lg animate-in zoom-in duration-300">
-          <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 border border-emerald-100">
-            <Share2 size={32} />
+      <div className="p-10 bg-[#F8FAFC] h-screen flex items-center justify-center font-sans">
+        <div className="bg-white p-14 rounded-[3.5rem] shadow-2xl text-center max-w-lg border border-emerald-100 animate-in zoom-in duration-500">
+          <div className="w-24 h-24 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-8 border border-emerald-100 shadow-inner">
+            <UserCheck size={48} />
           </div>
-          <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter italic">
-            Handshake Active
+          <h2 className="text-3xl font-black text-slate-800 uppercase italic tracking-tighter">
+            Handshake Confirmed
           </h2>
-          <p className="text-slate-400 mt-4 text-sm font-medium italic">
-            Digital transfer initiated for {selectedResident.first_name}.
+          <p className="text-slate-400 mt-4 text-sm font-medium leading-relaxed italic px-6">
+            Patient successfully synchronized with{" "}
+            <b>Dr. {selectedDoctor?.users.last_name}</b>'s queue.
           </p>
-          <div className="mt-10 p-8 bg-slate-900 rounded-[2.5rem] text-white">
-            <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest mb-2">
-              Reference ID
+
+          <div className="mt-10 p-10 bg-slate-900 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden">
+            <div className="absolute right-0 top-0 p-4 opacity-10">
+              <Printer size={100} />
+            </div>
+            <p className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.3em] mb-3 leading-none italic">
+              Electronic Priority Token
             </p>
             <p className="text-5xl font-black tracking-tighter italic">
-              #{Math.floor(Math.random() * 8999) + 1000}
+              {(facilityQueueCount + 1).toString().padStart(3, "0")}
+            </p>
+            <p className="text-[9px] font-bold text-slate-500 mt-4 uppercase tracking-widest">
+              {myFacility.name}
             </p>
           </div>
-          <div className="mt-10 flex gap-4">
-            <button
-              onClick={() => window.print()}
-              className="flex-1 bg-white border-2 border-slate-200 text-slate-700 py-4 rounded-2xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
-            >
-              {" "}
-              <Printer size={16} /> Print Slip{" "}
-            </button>
-            <button
-              onClick={() => window.location.reload()}
-              className="flex-1 bg-[#00695C] text-white py-4 rounded-2xl font-bold text-[10px] uppercase tracking-widest shadow-lg"
-            >
-              {" "}
-              Next Patient{" "}
-            </button>
-          </div>
+
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full mt-10 py-5 bg-primary text-white rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-emerald-900/20"
+          >
+            Terminate Session & Reset Node
+          </button>
         </div>
       </div>
     );
-  }
 
   return (
-    <div className="p-12 bg-[#F8FAFC] min-h-screen font-sans">
-      <div className="mb-12">
-        <h1 className="text-4xl font-black text-slate-800 tracking-tighter leading-none text-primary">
-          Assisted Intake Portal
-        </h1>
-        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-2">
-          {myFacility.name} Clinical Node
-        </p>
+    <div className="p-10 bg-[#F8FAFC] min-h-screen font-sans flex flex-col">
+      <div className="mb-10 flex justify-between items-end shrink-0">
+        <div>
+          <h1 className="text-4xl font-black text-slate-800 tracking-tighter uppercase leading-none text-primary italic">
+            Assisted Entry
+          </h1>
+          <p className="text-gray-400 text-[10px] font-semibold uppercase tracking-[0.2em] mt-3 italic leading-none">
+            / {myFacility.name} / Operational node
+          </p>
+        </div>
+        <div className="flex gap-4 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="flex flex-col text-right border-r border-slate-50 pr-4">
+            <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">
+              Facility Hours
+            </span>
+            <span className="text-[10px] font-bold text-slate-600">
+              {myFacility.opening} - {myFacility.closing}
+            </span>
+          </div>
+          <div className="flex flex-col text-right">
+            <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">
+              Active Load
+            </span>
+            <span className="text-[10px] font-bold text-emerald-600 italic uppercase">
+              Pos: {facilityQueueCount + 1}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-        {/* SECTION 1: INTAKE */}
-        <div className="lg:col-span-5 space-y-8">
-          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">
-            <div className="flex items-center gap-4 mb-10 border-b border-gray-50 pb-6">
-              <div className="p-4 bg-emerald-50 text-emerald-600 rounded-[1.5rem] shadow-sm font-black italic">
-                ID
-              </div>
-              <h3 className="text-lg font-bold text-gray-800 uppercase tracking-tight">
-                Resident Search
-              </h3>
-            </div>
+      {/* TRACKER */}
+      <div className="flex items-center gap-6 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 mb-8 shrink-0 overflow-x-auto no-scrollbar">
+        <Step num={1} label="ID Match" active={step === 1} done={step > 1} />
+        <div className="w-10 h-px bg-slate-100 shrink-0" />
+        <Step num={2} label="Biometric" active={step === 2} done={step > 2} />
+        <div className="w-10 h-px bg-slate-100 shrink-0" />
+        <Step num={3} label="Vitals" active={step === 3} done={step > 3} />
+        <div className="w-10 h-px bg-slate-100 shrink-0" />
+        <Step num={4} label="Dispatch" active={step === 4} done={step > 4} />
+      </div>
 
-            <div className="space-y-8 relative">
-              <div className="relative flex items-center bg-gray-50 rounded-2xl">
-                <Search className="absolute left-6 text-gray-300" size={20} />
-                <input
-                  type="text"
-                  placeholder="Type Name..."
-                  className="w-full bg-transparent border-none p-5 pl-16 text-sm font-bold text-gray-700 outline-none"
-                  value={residentSearch}
-                  onChange={(e) => {
-                    setResidentSearch(e.target.value);
-                    setSelectedResident(null);
-                  }}
-                />
-              </div>
-              {suggestions.length > 0 && (
-                <div className="absolute top-16 left-0 right-0 bg-white rounded-3xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
-                  {suggestions.map((p) => (
-                    <div
-                      key={p.id}
-                      onClick={() => {
-                        setSelectedResident(p);
-                        setResidentSearch(`${p.first_name} ${p.last_name}`);
-                        setSuggestions([]);
-                      }}
-                      className="p-5 hover:bg-emerald-50 cursor-pointer border-b last:border-0 border-gray-50 flex justify-between items-center transition-colors"
-                    >
-                      <div>
-                        <p className="text-sm font-bold text-gray-800 uppercase">
-                          {p.first_name} {p.last_name}
-                        </p>
-                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">
-                          {p.philhealth_id || "ID UNSET"}
-                        </p>
+      <div className="grid grid-cols-12 gap-8 flex-1 min-h-0">
+        {/* LEFT PANEL */}
+        <div className="col-span-8 flex flex-col gap-6 overflow-y-auto no-scrollbar pb-10">
+          <div className="grid grid-cols-2 gap-6 leading-none">
+            {/* 1. SUBJECT SEARCH */}
+            <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100 flex flex-col">
+              <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-8 italic">
+                1. Resident Identification
+              </h3>
+              <div className="relative">
+                <div className="flex items-center bg-gray-50 rounded-2xl p-1 focus-within:ring-2 ring-primary/10 transition-all">
+                  <Search className="ml-5 text-slate-300 font-bold" size={20} />
+                  <input
+                    type="text"
+                    placeholder="Scan or Type Name..."
+                    className="w-full bg-transparent p-5 text-sm font-bold outline-none uppercase"
+                    value={residentSearch}
+                    onChange={(e) => {
+                      setResidentSearch(e.target.value);
+                      setSelectedResident(null);
+                    }}
+                  />
+                </div>
+                {suggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-3 bg-white rounded-3xl shadow-2xl border border-slate-100 z-50 overflow-hidden">
+                    {suggestions.map((p) => (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          setSelectedResident(p);
+                          setResidentSearch(`${p.first_name} ${p.last_name}`);
+                          setSuggestions([]);
+                          setStep(2);
+                        }}
+                        className="p-6 hover:bg-emerald-50 cursor-pointer flex justify-between items-center border-b last:border-0 border-gray-50 group"
+                      >
+                        <div className="flex items-center gap-5">
+                          <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-300 font-black italic border border-slate-100">
+                            {p.first_name[0]}
+                          </div>
+                          <p className="text-sm font-bold text-slate-700 uppercase tracking-tighter">
+                            {p.first_name} {p.last_name}
+                          </p>
+                        </div>
+                        <ChevronRight
+                          size={14}
+                          className="text-slate-300 group-hover:text-primary"
+                        />
                       </div>
-                      <ChevronRight size={14} className="text-gray-300" />
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                )}
+              </div>
+              {selectedResident && (
+                <div className="mt-8 p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100 flex items-center justify-between animate-in slide-in-from-top-2">
+                  <div>
+                    <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest mb-1 italic">
+                      Link Secured
+                    </p>
+                    <p className="text-base font-bold text-slate-800 uppercase italic leading-none">
+                      {selectedResident.first_name} {selectedResident.last_name}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedResident(null)}
+                    className="text-red-300 hover:text-red-500 transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
               )}
+            </div>
 
-              <div
-                className={`transition-all duration-500 ${selectedResident ? "opacity-100" : "opacity-20 pointer-events-none"}`}
-              >
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 px-2 italic">
-                  Presenting Symptoms (Complaint)
-                </label>
-                <textarea
-                  rows="6"
-                  placeholder="Describe the current clinical manifestation..."
-                  className="w-full bg-gray-50 border-none rounded-[2rem] p-7 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-primary/20 outline-none resize-none italic shadow-inner"
-                  value={complaint}
-                  onChange={(e) => setComplaint(e.target.value)}
-                />
+            {/* 2. VERIFICATION */}
+            <div
+              className={`bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100 h-full flex flex-col transition-all ${selectedResident ? "opacity-100" : "opacity-20 pointer-events-none"}`}
+            >
+              <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-8 italic">
+                2. Biometric Handshake
+              </h3>
+              <div className="space-y-4">
+                <button
+                  onClick={handleLivenessProtocol}
+                  className="w-full flex items-center justify-between p-5 bg-gray-50 rounded-2xl border border-slate-100 hover:border-primary transition-all group"
+                >
+                  <div className="flex items-center gap-4 text-xs uppercase font-black tracking-widest italic text-slate-600">
+                    <ScanFace
+                      size={22}
+                      className="text-slate-400 group-hover:text-primary"
+                    />
+                    Liveness Scan
+                  </div>
+                  <ChevronRight size={14} className="text-slate-300" />
+                </button>
+                <button
+                  onClick={verifyPhilHealth}
+                  className="w-full flex items-center justify-between p-5 bg-emerald-50 rounded-2xl border border-emerald-100 hover:bg-emerald-600 hover:text-white transition-all group"
+                >
+                  <div className="flex items-center gap-4 text-xs uppercase font-black tracking-widest italic text-emerald-600 group-hover:text-white">
+                    <ShieldCheck size={22} />
+                    Verify YAKAP
+                  </div>
+                  {step > 2 ? (
+                    <CheckCircle
+                      size={16}
+                      fill="white"
+                      className="text-emerald-600"
+                    />
+                  ) : (
+                    <ChevronRight size={14} />
+                  )}
+                </button>
               </div>
+            </div>
+          </div>
+
+          {/* LOWER GRID */}
+          <div className="grid grid-cols-2 gap-6">
+            {/* STEP 3 */}
+            <div
+              className={`bg-white p-12 rounded-[3.5rem] shadow-sm border border-slate-100 flex flex-col items-center text-center transition-all ${step === 3 ? "opacity-100 border-primary shadow-xl ring-8 ring-primary/5" : "opacity-20"}`}
+            >
+              <div className="p-8 bg-emerald-50 text-emerald-600 rounded-[2.5rem] mb-8 shadow-inner animate-pulse">
+                <Stethoscope size={48} />
+              </div>
+              <h3 className="text-xl font-black text-slate-800 uppercase mb-2 italic">
+                Clinical Intake
+              </h3>
+              <p className="text-xs text-slate-400 font-medium italic mb-10 leading-relaxed px-8">
+                Synchronize physical vitals in Digital Charting to unlock
+                clinician queue.
+              </p>
+              <button
+                onClick={() =>
+                  navigate("/charting", {
+                    state: { intakeMode: true, patient: selectedResident },
+                  })
+                }
+                className="w-full py-5 bg-slate-900 text-white rounded-[1.5rem] font-bold uppercase text-[9px] tracking-[0.3em] shadow-lg hover:bg-black transition-all"
+              >
+                Launch Registry Node
+              </button>
+            </div>
+
+            {/* STEP 4: ENHANCED DOCTOR LIST */}
+            <div
+              className={`bg-white p-10 rounded-[3.5rem] shadow-sm border border-slate-100 flex flex-col transition-all ${step === 4 ? "opacity-100 border-emerald-500 shadow-xl" : "opacity-20 pointer-events-none"}`}
+            >
+              <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-8 px-2 italic">
+                4. Tactical Clinician Dispatch
+              </h3>
+              <div className="space-y-4 flex-1 overflow-y-auto no-scrollbar mb-8 px-1 max-h-[220px]">
+                {availableDoctors.length > 0 ? (
+                  availableDoctors.map((doc) => (
+                    <div
+                      key={doc.user_id}
+                      onClick={() => setSelectedDoctor(doc)}
+                      className={`p-5 rounded-3xl border-2 transition-all cursor-pointer flex flex-col ${selectedDoctor?.user_id === doc.user_id ? "border-primary bg-emerald-50 shadow-md scale-105" : "border-slate-50 bg-gray-50"}`}
+                    >
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center font-black text-primary text-[10px] italic border border-slate-100 shadow-sm leading-none">
+                            MD
+                          </div>
+                          <span className="text-[11px] font-black text-slate-800 uppercase tracking-tighter leading-none">
+                            Dr. {doc.users.last_name}
+                          </span>
+                        </div>
+                        {selectedDoctor?.user_id === doc.user_id && (
+                          <CheckCircle
+                            size={18}
+                            fill="#0D9488"
+                            className="text-white animate-in zoom-in"
+                          />
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 mt-2 pt-3 border-t border-white/50">
+                        <div className="flex items-center gap-1.5 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                          <Award size={10} className="text-primary" />{" "}
+                          {doc.telemed_doctors?.[0]?.specialty || "GENERALIST"}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[8px] font-black text-emerald-600 uppercase tracking-widest justify-end italic">
+                          <Clock size={10} />{" "}
+                          {doc.telemed_doctors?.[0]?.current_wait_minutes || 0}m
+                          Wait
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[10px] text-gray-300 font-bold uppercase text-center py-20 italic">
+                    No Doctors Synced
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={finalizeHandover}
+                disabled={!selectedDoctor || loading}
+                className="w-full py-6 bg-primary text-white rounded-[2rem] font-black uppercase tracking-widest text-[10px] shadow-2xl flex justify-center items-center gap-4 active:scale-95 disabled:opacity-20"
+              >
+                {loading ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <Share2 size={18} />
+                )}{" "}
+                Finalize Handover
+              </button>
             </div>
           </div>
         </div>
 
-        {/* SECTION 2: AI ASSISTED NETWORK ROUTING */}
-        <div className="lg:col-span-7 space-y-6">
-          {!selectedResident || recommendations.length === 0 ? (
-            <div className="h-[600px] flex flex-col items-center justify-center border-2 border-dashed border-gray-100 rounded-[3.5rem] p-10 text-center opacity-40">
-              <div className="w-20 h-20 bg-gray-50 rounded-[2.5rem] flex items-center justify-center mb-6 animate-pulse">
-                <BrainCircuit size={40} className="text-gray-200" />
-              </div>
-              <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em]">
-                Awaiting Clinical Stream...
-              </p>
+        {/* RIGHT: REFERRAL INBOX */}
+        <div className="col-span-4 bg-white p-10 rounded-[3.5rem] shadow-sm border border-slate-200 flex flex-col min-h-0 overflow-hidden leading-none">
+          <div className="flex items-center justify-between mb-10 shrink-0 px-2 leading-none font-bold text-slate-400 uppercase text-[11px] tracking-widest italic">
+            <div className="flex items-center gap-3 text-slate-800 italic">
+              <ClipboardList size={20} className="text-primary" /> Referral
+              Stream
             </div>
-          ) : (
-            <div className="animate-in fade-in slide-in-from-right-10 duration-700 space-y-6">
-              <div className="flex items-center gap-3 px-4">
-                <Zap size={16} className="text-orange-400 fill-orange-400" />
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                  Smart Network Recommendations
-                </h3>
-              </div>
+            <span className="bg-primary text-white px-2 py-0.5 rounded-lg text-[8px] font-black shadow-lg">
+              LIVE
+            </span>
+          </div>
 
-              <div className="space-y-4">
-                {isAnalyzing ? (
-                  <div className="p-20 text-center flex flex-col items-center gap-4 bg-white rounded-[3rem] border border-gray-100 shadow-sm">
-                    <Loader2
-                      size={32}
-                      className="animate-spin text-primary opacity-20"
-                    />
-                    <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">
-                      Groq-Llama analyzing Naga City Hub...
-                    </p>
+          <div className="flex-1 overflow-y-auto no-scrollbar space-y-5 pr-2 pb-6">
+            {outpatientReferrals.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center opacity-20 px-10">
+                <Share2 size={48} className="mb-6" />
+                <p className="text-[11px] font-black text-slate-800 uppercase tracking-widest italic">
+                  Registry stream dormant
+                </p>
+              </div>
+            ) : (
+              outpatientReferrals.map((ref) => (
+                <div
+                  key={ref.id}
+                  className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 hover:border-primary transition-all group relative overflow-hidden shadow-inner"
+                >
+                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-primary opacity-20 group-hover:opacity-100" />
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <p className="text-xs font-black text-slate-800 uppercase leading-none">
+                        {ref.users?.first_name} {ref.users?.last_name}
+                      </p>
+                      <p className="text-[9px] font-bold text-primary uppercase mt-1.5 tracking-widest">
+                        From: {ref.origin?.name}
+                      </p>
+                    </div>
                   </div>
-                ) : (
-                  recommendations.map((recItem, i) => {
-                    const hospitalData = hospitals.find(
-                      (h) => h.name === recItem.name,
-                    );
-                    const isSelected = selectedTarget?.name === recItem.name;
-                    const distance = calculateDistance(
-                      myFacility.latitude,
-                      myFacility.longitude,
-                      hospitalData?.latitude,
-                      hospitalData?.longitude,
-                    );
-
-                    return (
-                      <div
-                        key={i}
-                        onClick={() => setSelectedTarget(recItem)}
-                        className={`bg-white p-8 rounded-[2.5rem] border-2 transition-all cursor-pointer group relative overflow-hidden ${isSelected ? "border-[#00695C] shadow-2xl shadow-emerald-900/10 scale-[1.02]" : "border-transparent shadow-sm hover:border-gray-200"}`}
-                      >
-                        {i === 0 && (
-                          <div className="absolute top-0 right-0 bg-emerald-500 text-white px-6 py-1.5 rounded-bl-[1.5rem] text-[8px] font-black uppercase tracking-widest shadow-lg">
-                            Primary AI Match
-                          </div>
-                        )}
-
-                        <div className="flex justify-between items-start mb-6">
-                          <div className="flex items-center gap-4">
-                            <div
-                              className={`p-4 rounded-2xl ${isSelected ? "bg-emerald-500 text-white" : "bg-gray-50 text-gray-400 border border-gray-100"}`}
-                            >
-                              <Building2 size={24} />
-                            </div>
-                            <div>
-                              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">
-                                {recItem.urgency} Priority Level
-                              </p>
-                              <h4 className="text-xl font-black text-slate-800 uppercase italic tracking-tighter leading-none mt-1">
-                                {recItem.name}
-                              </h4>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-2xl font-black text-emerald-600 leading-none">
-                              {recItem.score}%
-                            </p>
-                            <p className="text-[8px] font-bold text-gray-300 uppercase tracking-tighter mt-1">
-                              Match Score
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="bg-gray-50/50 p-5 rounded-[1.5rem] border border-gray-100 mb-6">
-                          <p className="text-[10px] font-bold text-slate-500 leading-relaxed italic">
-                            "{recItem.reason}"
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-6 text-center">
-                          <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-gray-300 uppercase tracking-widest mb-1">
-                              Ward Status
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-700">
-                              {hospitalData?.beds?.filter(
-                                (b) => b.status === "available",
-                              ).length || 0}{" "}
-                              Available Beds
-                            </span>
-                          </div>
-                          <div className="flex flex-col border-x border-gray-100 px-4">
-                            <span className="text-[8px] font-black text-gray-300 uppercase tracking-widest mb-1">
-                              Equipment
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-700 uppercase tracking-tighter truncate">
-                              {hospitalData?.facility_resources?.length || 0}{" "}
-                              Critical Assets
-                            </span>
-                          </div>
-                          <div className="flex flex-col text-right">
-                            <span className="text-[8px] font-black text-gray-300 uppercase tracking-widest mb-1">
-                              Distance
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-700 uppercase italic">
-                              {distance !== "---" ? `${distance} KM` : "N/A"}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <button
-                onClick={handleFinalize}
-                disabled={loading || !selectedTarget}
-                className="w-full bg-slate-900 text-white py-6 rounded-[2.5rem] font-black text-[11px] uppercase tracking-[0.4em] shadow-2xl hover:bg-[#00695C] transition-all flex items-center justify-center gap-4 active:scale-[0.98] border-b-4 border-slate-950 mt-4 disabled:opacity-20"
-              >
-                {loading ? (
-                  <Loader2 className="animate-spin" size={20} />
-                ) : (
-                  <ArrowRight size={20} />
-                )}
-                Execute Clinical Referral
-              </button>
-            </div>
-          )}
+                  <p className="text-[11px] italic text-slate-400 line-clamp-2 leading-relaxed mb-6 font-medium">
+                    "{ref.chief_complaint}"
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSelectedResident(ref.users);
+                      setStep(2);
+                    }}
+                    className="w-full py-3.5 bg-white border border-slate-200 rounded-[1.2rem] text-[9px] font-black uppercase tracking-[0.2em] hover:bg-slate-900 hover:text-white transition-all shadow-sm active:scale-95"
+                  >
+                    Initiate Handshake
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="mt-6 p-6 bg-slate-900 text-white rounded-[2.5rem] shadow-xl relative overflow-hidden italic">
+            <AlertCircle
+              className="absolute -right-4 -top-4 opacity-10"
+              size={100}
+            />
+            <p className="text-[9px] font-bold uppercase tracking-widest text-primary leading-relaxed relative z-10">
+              Secure data node active. External facilities currently
+              transmitting clinical packets to this station.
+            </p>
+          </div>
         </div>
       </div>
     </div>
   );
 };
+
+const Step = ({ num, label, active, done }) => (
+  <div
+    className={`flex items-center gap-4 shrink-0 transition-all ${active ? "scale-105" : ""}`}
+  >
+    <div
+      className={`w-11 h-11 rounded-[1.2rem] flex items-center justify-center font-black text-sm shadow-sm transition-all ${done ? "bg-emerald-500 text-white" : active ? "bg-primary text-white shadow-emerald-900/20 shadow-lg" : "bg-slate-50 text-slate-300"}`}
+    >
+      {done ? "✓" : num}
+    </div>
+    <span
+      className={`text-[11px] font-black uppercase tracking-widest leading-none ${active ? "text-primary" : "text-slate-300 italic"}`}
+    >
+      {label}
+    </span>
+  </div>
+);
 
 export default AssistedBooking;
