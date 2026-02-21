@@ -277,9 +277,16 @@ const Consultations = () => {
           .from("bookings")
           .update({ status: "completed" })
           .eq("id", activeBookingId);
+
+        // --- NEW CODE: OPTIMISTIC UI UPDATE ---
+        // Immediately filter this specific booking ID out of the visible queue
+        setUnifiedQueue((prevQueue) =>
+          prevQueue.filter((item) => item.original_id !== activeBookingId),
+        );
       }
 
       alert("Consultation Saved Successfully");
+
       setConsultationData({
         diagnosis: "",
         medical_treatment: "",

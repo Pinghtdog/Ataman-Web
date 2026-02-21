@@ -98,9 +98,6 @@ const MedicalRecord = () => {
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
             <span className="text-[10px] font-bold uppercase text-slate-500">System Online</span>
           </div>
-          <div className="w-10 h-10 bg-slate-200 rounded-full overflow-hidden border-2 border-white shadow-md">
-            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Patient" alt="avatar" />
-          </div>
         </div>
       </div>
 

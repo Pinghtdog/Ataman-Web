@@ -1,0 +1,72 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "ATAMAN Health",
+  "colors": {
+    "primary": "#00695C",
+    "light": "#4DB6AC",
+    "dark": "#004D40"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "User Manual",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "index"
+            ]
+          },
+          {
+            "group": "Clinical Modules",
+            "pages": [
+             "consultations",
+            "telemed",
+            "charting",      
+            "records",      
+            "beds",
+            "referrals",
+            "booking",       
+            "services"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Admin",
+        "groups": [
+          {
+            "group": "System Config",
+            "pages": [
+              "settings"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "logo": {
+    "light": "/logo/AtamanLogo.png",
+    "dark": "/logo/AtamanLogo.png"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Support",
+        "href": "mailto:support@ataman.health"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Open App",
+      "href": "http://localhost:5173"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/your-repo"
+    }
+  }
+}
