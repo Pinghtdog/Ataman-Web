@@ -4,6 +4,7 @@ import {
   Activity,
   Calendar,
   Clock,
+  Share2,
   ChevronRight,
   Search,
   Thermometer,
@@ -30,6 +31,7 @@ const Consultations = () => {
   const [historyLog, setHistoryLog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isReferralModalOpen, setIsReferralModalOpen] = useState(false);
   const [myFacilityId, setMyFacilityId] = useState(null);
 
   const [activePatient, setActivePatient] = useState(null);
@@ -284,11 +286,67 @@ const Consultations = () => {
         lab_findings: "",
         notes: "",
       });
+
+      // INSTANTLY remove from UI queue
+      setUnifiedQueue((prev) =>
+        prev.filter((q) => q.original_id !== activeBookingId),
+      );
+
+      setActivePatient(null);
+      setActiveBookingId(null);
+      initializeConsole(); // Refresh in background
+    } else {
+      alert("Failed to save consultation.");
+    }
+    setIsSaving(false);
+  };
+
+  const handleReferPatient = async () => {
+    setIsSaving(true);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    // 1. Create the referral record
+    const { error: refError } = await supabase.from("referrals").insert({
+      patient_id: activePatient.id,
+      origin_facility_id: myFacilityId,
+      chief_complaint:
+        triageInfo?.chief_complaint ||
+        consultationData.notes ||
+        "Referral requested",
+      diagnosis_impression: consultationData.diagnosis || "Pending Assessment",
+      status: "PENDING",
+    });
+
+    if (!refError) {
+      // 2. Clear the active queue
+      if (activeBookingId) {
+        await supabase
+          .from("bookings")
+          .update({ status: "completed" })
+          .eq("id", activeBookingId);
+      }
+
+      alert("Referral successfully pushed to Network Stream.");
+      setIsReferralModalOpen(false);
+      setConsultationData({
+        diagnosis: "",
+        medical_treatment: "",
+        lab_findings: "",
+        notes: "",
+      });
+
+      // INSTANTLY remove from UI queue
+      setUnifiedQueue((prev) =>
+        prev.filter((q) => q.original_id !== activeBookingId),
+      );
+
       setActivePatient(null);
       setActiveBookingId(null);
       initializeConsole();
     } else {
-      alert("Failed to save consultation.");
+      alert("Failed to generate referral: " + refError.message);
     }
     setIsSaving(false);
   };
@@ -530,6 +588,12 @@ const Consultations = () => {
                     <Stethoscope className="text-[#00695C]" /> Clinical
                     Assessment
                   </h2>
+                  <button
+                    onClick={() => setIsReferralModalOpen(true)}
+                    className="bg-orange-50 text-orange-600 px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-orange-100 transition-all flex items-center gap-2"
+                  >
+                    <Share2 size={14} /> Refer Patient
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-8 flex-1 overflow-y-auto pr-2 custom-scrollbar">
@@ -631,6 +695,49 @@ const Consultations = () => {
             initializeConsole();
           }}
         />
+      )}
+
+      {/* REFERRAL MODAL */}
+      {isReferralModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg p-10 animate-in zoom-in border border-white">
+            <h3 className="text-xl font-black text-slate-800 uppercase mb-6 flex items-center gap-2">
+              <Share2 size={24} className="text-orange-500" /> Refer Patient
+            </h3>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
+              Reason for Referral
+            </p>
+            <textarea
+              className="w-full bg-slate-50 rounded-2xl p-6 text-sm font-medium outline-none h-40 mb-8 resize-none"
+              placeholder="Describe condition requiring external care..."
+              value={consultationData.notes || ""}
+              onChange={(e) =>
+                setConsultationData({
+                  ...consultationData,
+                  notes: e.target.value,
+                })
+              }
+            ></textarea>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setIsReferralModalOpen(false)}
+                className="flex-1 py-4 text-xs font-bold uppercase text-slate-400 hover:text-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReferPatient}
+                disabled={isSaving}
+                className="flex-1 py-4 bg-orange-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-orange-600 transition-all flex justify-center items-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <Loader2 className="animate-spin" size={16} />
+                ) : null}{" "}
+                Confirm Transfer
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
