@@ -135,6 +135,12 @@ const DashboardLayout = () => {
       icon: <FileText size={18} />,
     },
 
+     {
+      name: "Medical Records",
+      path: "/medical-records",
+      icon: <FileText size={18} />,
+    },
+
     // --- CONDITIONALLY ADD DOCTOR CONSOLE ---
     ...(userRole === "DOCTOR"
       ? [
