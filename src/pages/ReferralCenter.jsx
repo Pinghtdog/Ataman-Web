@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { Map, Marker } from "pigeon-maps";
 import ReferralModal from '../components/ReferralModal'; 
 import CreateReferralModal from '../components/CreateReferralModal';
-import { a } from 'framer-motion/client';
+// import { a } from 'framer-motion';
 
 const HOSPITAL_LOCATION = { lat: 13.6218, lng: 123.1948 };
 let simInterval = null;
